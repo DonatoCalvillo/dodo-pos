@@ -8,13 +8,23 @@ public class SqliteDbContext
 
     public SqliteDbContext()
     {
-        // El archivo se guardará en la misma carpeta del ejecutable con el nombre "ferresys.db"
-        string databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ferresys.db");
+        // Obtenemos la ruta de AppData/Local del usuario (ej: C:\Users\Nombre\AppData\Local\FerreSys)
+        string appDataFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FerreSys"
+        );
+
+        // Creamos la carpeta automáticamente si no existe
+        if (!Directory.Exists(appDataFolder))
+        {
+            Directory.CreateDirectory(appDataFolder);
+        }
+
+        string databasePath = Path.Combine(appDataFolder, "ferresys.db");
         _connectionString = $"Data Source={databasePath};";
 
         InitializeDatabase();
     }
-
     public SqliteConnection CreateConnection()
     {
         return new SqliteConnection(_connectionString);

@@ -42,7 +42,9 @@ public partial class Form1 : Form
         _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
 
         // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
-        this.Text = "FerreSys MVP - Terminal de Mostrador";
+        var version = typeof(Program).Assembly.GetName().Version;
+        var versionLabel = version is null ? "" : $" v{version.ToString(3)}";
+        this.Text = $"FerreSys MVP - Terminal de Mostrador{versionLabel}";
         this.StartPosition = FormStartPosition.CenterScreen;
 
         // Eliminamos los bordes de la ventana (maximizar, minimizar, cerrar tradicionales)

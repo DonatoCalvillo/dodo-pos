@@ -1,0 +1,19 @@
+<Project>
+  <!--
+    Versionamiento centralizado (SemVer).
+    Al liberar una versión, actualiza estos valores y genera un tag git: vMAJOR.MINOR.PATCH
+  -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>0.1.0</InformationalVersion>
+
+    <Product>FerreSys</Product>
+    <AssemblyTitle>FerreSys</AssemblyTitle>
+    <Company>DDTECH</Company>
+    <Authors>DDTECH</Authors>
+    <Copyright>Copyright © DDTECH</Copyright>
+    <Description>Sistema de punto de venta para ferretería</Description>
+  </PropertyGroup>
+</Project>
