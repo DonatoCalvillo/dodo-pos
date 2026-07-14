@@ -40,18 +40,17 @@ public partial class Form1 : Form
         _addProductUseCase = new AddProductUseCase(_productRepository, _subscriptionService);
         _searchProductsUseCase = new SearchProductsUseCase(_productRepository);
         _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
-        _updateProductUseCase = new UpdateProductUseCase(_productRepository);
-        _importProductsUseCase = new ImportProductsUseCase(_productRepository);
-        _adjustStockUseCase = new AdjustStockUseCase(_productRepository);
 
-        InitializeComponent();
+        // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
         this.Text = "FerreSys MVP - Terminal de Mostrador";
-        this.Size = new Size(1200, 760);
-        this.MinimumSize = new Size(1000, 640);
         this.StartPosition = FormStartPosition.CenterScreen;
-        this.BackColor = UiTheme.WindowBg;
-        this.Font = UiTheme.Ui;
 
+        // Eliminamos los bordes de la ventana (maximizar, minimizar, cerrar tradicionales)
+        this.FormBorderStyle = FormBorderStyle.None;
+        // Forzamos a que se maximice ocupando absolutamente todo el monitor
+        this.WindowState = FormWindowState.Maximized;
+
+        // Mantenemos activo el KeyPreview para que escuche el teclado de forma global
         this.KeyPreview = true;
         this.KeyDown += Form1_KeyDown;
 
@@ -669,13 +668,32 @@ public partial class Form1 : Form
 
     private void Form1_KeyDown(object? sender, KeyEventArgs e)
     {
+        // ATAJO 1: F5 para Cobrar la venta actual
         if (e.KeyCode == Keys.F5)
         {
             btnCheckout.PerformClick();
             e.Handled = true;
         }
-    }
 
+        // ATAJO 2: Esc para salir del punto de venta de forma segura
+        if (e.KeyCode == Keys.Escape)
+        {
+            var confirmExit = MessageBox.Show(
+                "¿Seguro que deseas cerrar el punto de venta FerreSys?",
+                "Salir del Sistema",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question
+            );
+
+            if (confirmExit == DialogResult.Yes)
+            {
+                // CORRECCIÓN AQUÍ: Agregamos el prefijo completo del sistema de Windows Forms
+                System.Windows.Forms.Application.Exit();
+            }
+
+            e.Handled = true;
+        }
+    }
     private void BtnPlus_Click(object? sender, EventArgs e)
     {
         if (dgvCart.CurrentRow != null)
