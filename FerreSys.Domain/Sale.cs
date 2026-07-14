@@ -25,14 +25,21 @@ public class Sale
     public DateTime CreatedAt { get; private set; }
     public List<SaleItem> Items { get; private set; }
     public decimal Total => Items.Sum(x => x.Subtotal);
+    public string PaymentMethod { get; private set; } // "EFECTIVO" o "TARJETA"
+    public string CardReference { get; private set; } // Últimos 4 dígitos o folio (opcional)
 
-    public Sale(Guid id, DateTime createdAt, List<SaleItem> items)
+    public Sale(Guid id, DateTime createdAt, List<SaleItem> items, string paymentMethod, string cardReference)
     {
         if (items == null || items.Count == 0)
             throw new ArgumentException("Una venta debe contener al menos un producto.");
 
+        if (paymentMethod != "EFECTIVO" && paymentMethod != "TARJETA")
+            throw new ArgumentException("Método de pago inválido.");
+
         Id = id;
         CreatedAt = createdAt;
         Items = items;
+        PaymentMethod = paymentMethod;
+        CardReference = cardReference ?? string.Empty;
     }
 }

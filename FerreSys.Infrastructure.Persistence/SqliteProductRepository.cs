@@ -125,15 +125,16 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             // Insertar en cabecera de Ventas
-            string saleQuery = "INSERT INTO Sales (Id, CreatedAt, Total) VALUES (@Id, @CreatedAt, @Total);";
+            string saleQuery = "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference) VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference);";
             using (var cmdSale = new SqliteCommand(saleQuery, connection, transaction))
             {
                 cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
                 cmdSale.Parameters.AddWithValue("@CreatedAt", sale.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
                 cmdSale.Parameters.AddWithValue("@Total", sale.Total);
+                cmdSale.Parameters.AddWithValue("@PaymentMethod", sale.PaymentMethod);
+                cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
                 cmdSale.ExecuteNonQuery();
             }
-
             // Insertar los detalles
             string detailQuery = @"
             INSERT INTO SaleDetails (SaleId, ProductId, Barcode, ProductName, Quantity, PriceSold) 
@@ -166,7 +167,7 @@ public class SqliteProductRepository : IProductRepository
         using var connection = _context.CreateConnection();
         connection.Open();
 
-        string query = "SELECT Id, CreatedAt, Total FROM Sales ORDER BY CreatedAt DESC;";
+        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference FROM Sales ORDER BY CreatedAt DESC;";
         using var command = new SqliteCommand(query, connection);
         using var reader = command.ExecuteReader();
 
@@ -177,7 +178,9 @@ public class SqliteProductRepository : IProductRepository
             sales.Add(new Sale(
                 Guid.Parse(reader.GetString(0)),
                 DateTime.Parse(reader.GetString(1)),
-                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) }
+                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) },
+                reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3),
+                reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
             ));
         }
         return sales;
@@ -190,7 +193,7 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         // Filtro base: por defecto trae todo
-        string query = "SELECT Id, CreatedAt, Total FROM Sales";
+        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference FROM Sales";
 
         if (filterType == "TODAY")
         {
@@ -214,7 +217,9 @@ public class SqliteProductRepository : IProductRepository
             sales.Add(new Sale(
                 Guid.Parse(reader.GetString(0)),
                 DateTime.Parse(reader.GetString(1)),
-                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) }
+                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) },
+                reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3),
+                reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
             ));
         }
         return sales;
@@ -290,7 +295,7 @@ public class SqliteProductRepository : IProductRepository
 
         // Filtramos usando la función date() de SQLite para comparar rangos de forma limpia (YYYY-MM-DD)
         string query = @"
-        SELECT Id, CreatedAt, Total 
+        SELECT Id, CreatedAt, Total, PaymentMethod, CardReference 
         FROM Sales 
         WHERE date(CreatedAt) >= date(@StartDate) 
           AND date(CreatedAt) <= date(@EndDate)";
@@ -320,7 +325,9 @@ public class SqliteProductRepository : IProductRepository
             sales.Add(new Sale(
                 Guid.Parse(reader.GetString(0)),
                 DateTime.Parse(reader.GetString(1)),
-                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) }
+                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) },
+                reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3),
+                reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
             ));
         }
         return sales;

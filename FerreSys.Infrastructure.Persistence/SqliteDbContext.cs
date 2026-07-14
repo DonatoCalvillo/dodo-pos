@@ -39,7 +39,9 @@ public class SqliteDbContext
         CREATE TABLE IF NOT EXISTS Sales (
             Id TEXT PRIMARY KEY,
             CreatedAt TEXT NOT NULL,
-            Total REAL NOT NULL
+            Total REAL NOT NULL,
+            PaymentMethod TEXT NOT NULL DEFAULT 'EFECTIVO',
+            CardReference TEXT NOT NULL DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS SaleDetails (
@@ -56,5 +58,34 @@ public class SqliteDbContext
 
         using var command = new SqliteCommand(createTablesQuery, connection);
         command.ExecuteNonQuery();
+
+        EnsureSalesPaymentColumns(connection);
+    }
+
+    private static void EnsureSalesPaymentColumns(SqliteConnection connection)
+    {
+        // CREATE TABLE IF NOT EXISTS no agrega columnas nuevas a bases ya existentes
+        using var pragma = new SqliteCommand("PRAGMA table_info(Sales);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        if (!columns.Contains("PaymentMethod"))
+        {
+            using var alter = new SqliteCommand(
+                "ALTER TABLE Sales ADD COLUMN PaymentMethod TEXT NOT NULL DEFAULT 'EFECTIVO';",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+
+        if (!columns.Contains("CardReference"))
+        {
+            using var alter = new SqliteCommand(
+                "ALTER TABLE Sales ADD COLUMN CardReference TEXT NOT NULL DEFAULT '';",
+                connection);
+            alter.ExecuteNonQuery();
+        }
     }
 }

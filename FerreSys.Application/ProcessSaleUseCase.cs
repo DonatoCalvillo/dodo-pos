@@ -17,7 +17,7 @@ public class ProcessSaleUseCase
         _productRepository = productRepository;
     }
 
-    public void Execute(List<SaleItemDto> items)
+    public void Execute(List<SaleItemDto> items, string paymentMethod, string cardReference)
     {
         if (items == null || items.Count == 0)
             throw new ArgumentException("No hay productos en el carrito para realizar la venta.");
@@ -25,7 +25,6 @@ public class ProcessSaleUseCase
         var productsToUpdate = new List<(Product Product, int Quantity)>();
         var saleItems = new List<SaleItem>();
 
-        // 1. Validar stock y preparar datos
         foreach (var item in items)
         {
             var product = _productRepository.GetByBarcode(item.Barcode);
@@ -35,7 +34,6 @@ public class ProcessSaleUseCase
             product.RecordSale(item.Quantity);
             productsToUpdate.Add((product, item.Quantity));
 
-            // Creamos el registro del renglón de la venta
             saleItems.Add(new SaleItem(
                 product.Id,
                 product.Barcode,
@@ -45,14 +43,13 @@ public class ProcessSaleUseCase
             ));
         }
 
-        // 2. Persistir actualización de stock
         foreach (var (product, _) in productsToUpdate)
         {
             _productRepository.Update(product);
         }
 
-        // 3. Guardar el registro histórico de la venta
-        var sale = new Sale(Guid.NewGuid(), DateTime.Now, saleItems);
+        // PASO CORREGIDO: Pasamos el método de pago y referencia a la entidad del dominio
+        var sale = new Sale(Guid.NewGuid(), DateTime.Now, saleItems, paymentMethod, cardReference);
         _productRepository.SaveSale(sale);
     }
 }
