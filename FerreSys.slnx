@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="FerreSys.Application/FerreSys.Application.csproj" />
+  <Project Path="FerreSys.Domain/FerreSys.Domain.csproj" />
+  <Project Path="FerreSys.Infrastructure.Persistence/FerreSys.Infrastructure.Persistence.csproj" />
+  <Project Path="FerreSys.Infrastructure.UI/FerreSys.Infrastructure.UI.csproj" />
+</Solution>
