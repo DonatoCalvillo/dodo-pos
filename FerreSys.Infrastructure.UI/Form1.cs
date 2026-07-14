@@ -600,6 +600,7 @@ public partial class Form1 : Form
 
     private void BtnCheckout_Click(object? sender, EventArgs e)
     {
+        // Modifica la sección final del bloque try dentro de BtnCheckout_Click:
         try
         {
             if (dgvCart.Rows.Count == 0)
@@ -618,21 +619,41 @@ public partial class Form1 : Form
                 });
             }
 
+            // 1. Para poder simular el ticket, necesitamos construir el objeto Sale que usará el formateador
+            var saleItemsForTicket = new List<SaleItem>();
+            foreach (DataGridViewRow row in dgvCart.Rows)
+            {
+                string barcode = row.Cells[0].Value.ToString()!;
+                var p = _productRepository.GetByBarcode(barcode)!;
+                int qty = Convert.ToInt32(row.Cells[3].Value);
+                saleItemsForTicket.Add(new SaleItem(p.Id, p.Barcode, p.Name, qty, p.RetailPrice));
+            }
+            var simulatedSale = new Sale(Guid.NewGuid(), DateTime.Now, saleItemsForTicket);
+
+            // 2. Invocar el caso de uso real que descuenta stock e inserta en base de datos
             _processSaleUseCase.Execute(items);
 
-            MessageBox.Show("¡Venta procesada con éxito! El inventario ha sido actualizado.", "Venta Exitosa", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // 3. GENERACIÓN DEL TICKET: Llamamos a nuestro formateador de texto plano
+            string ticketText = TicketFormatter.GenerateTicketText(simulatedSale);
 
+            // 4. VISTA PREVIA: Mostramos cómo se vería el ticket físico en un cuadro de diálogo limpio
+            MessageBox.Show(
+                ticketText,
+                "Vista Previa del Ticket Impreso (58mm)",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.None // Sin icono para que el texto fije sus espacios Courier de forma limpia
+            );
+
+            // Limpiar Carrito y resetear interfaz
             dgvCart.Rows.Clear();
             txtBuscador.Clear();
             dgvSearch.Rows.Clear();
             CalculateTotal();
-            SetStatus("Venta cobrada correctamente");
             txtBuscador.Focus();
         }
         catch (Exception ex)
         {
             MessageBox.Show(ex.Message, "Error al Cobrar", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            SetStatus("Error al cobrar la venta");
         }
     }
 

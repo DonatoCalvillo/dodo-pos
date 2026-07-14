@@ -6,8 +6,15 @@ public partial class SalesHistoryForm : Form
 {
     private readonly IProductRepository _productRepository;
 
-    // Componentes de interfaz
-    private ComboBox cmbFilter;
+    // Controles de Filtros Avanzados
+    private TextBox txtSearchId;
+    private DateTimePicker dtpStart;
+    private DateTimePicker dtpEnd;
+    private Button btnToday;
+    private Button btnYesterday;
+    private Button btnThisWeek;
+
+    // Tablas y etiquetas
     private DataGridView dgvSales;
     private DataGridView dgvDetails;
     private Label lblRevenue;
@@ -16,76 +23,119 @@ public partial class SalesHistoryForm : Form
     {
         _productRepository = productRepository;
         InitializeComponent();
-        LoadSales("TODAY"); // Arranca mostrando lo de Hoy por defecto, que es lo más común
+
+        // Ejecutar búsqueda inicial seteando "Hoy" de forma predeterminada
+        SetDatesAndSearch(DateTime.Today, DateTime.Today);
     }
 
     private void InitializeComponent()
     {
-        this.Text = "Control de Caja e Historial de Ventas - FerreSys";
-        this.Size = new Size(950, 550);
+        this.Text = "Control de Caja Avanzado e Historial de Ventas - FerreSys";
+        this.Size = new Size(1000, 600);
         this.StartPosition = FormStartPosition.CenterParent;
 
-        // 1. Selector de Filtros (Día / Mes / Todo)
-        var lblFilter = new Label { Text = "Filtrar por:", Location = new Point(20, 20), Size = new Size(80, 25), Font = new Font("Arial", 10, FontStyle.Bold) };
-        cmbFilter = new ComboBox { Location = new Point(100, 18), Size = new Size(180, 25), DropDownStyle = ComboBoxStyle.DropDownList };
-        cmbFilter.Items.AddRange(new string[] { "Hoy", "Este Mes", "Ver Todo Histórico" });
-        cmbFilter.SelectedIndex = 0; // "Hoy" seleccionado por defecto
-        cmbFilter.SelectedIndexChanged += CmbFilter_SelectedIndexChanged;
+        // --- PANEL DE FILTROS SUPERIOR ---
+        int yRow1 = 20;
 
-        // 2. Tabla Izquierda: Listado de Cabeceras de Tickets
-        var lblTickets = new Label { Text = "Tickets Emitidos:", Location = new Point(20, 60), Size = new Size(200, 20), Font = new Font("Arial", 9, FontStyle.Italic) };
-        dgvSales = new DataGridView { Location = new Point(20, 80), Size = new Size(450, 340), AllowUserToAddRows = false, ReadOnly = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, BackgroundColor = Color.White };
-        dgvSales.Columns.Add("Id", "ID Ticket");
+        // 1. Buscador por ID del Ticket
+        var lblSearchId = new Label { Text = "Buscar ID Ticket:", Location = new Point(20, yRow1 + 3), Size = new Size(100, 20), Font = new Font("Arial", 9, FontStyle.Bold) };
+        txtSearchId = new TextBox { Location = new Point(125, yRow1), Size = new Size(130, 23) };
+        txtSearchId.TextChanged += (s, e) => ExecuteAdvancedSearch(); // Busca en tiempo real mientras escribe
+
+        // 2. Selectores de Rango de Fecha Libre
+        var lblStart = new Label { Text = "Desde:", Location = new Point(275, yRow1 + 3), Size = new Size(45, 20) };
+        dtpStart = new DateTimePicker { Location = new Point(325, yRow1), Size = new Size(110, 23), Format = DateTimePickerFormat.Short };
+        dtpStart.ValueChanged += (s, e) => ExecuteAdvancedSearch();
+
+        var lblEnd = new Label { Text = "Hasta:", Location = new Point(450, yRow1 + 3), Size = new Size(45, 20) };
+        dtpEnd = new DateTimePicker { Location = new Point(500, yRow1), Size = new Size(110, 23), Format = DateTimePickerFormat.Short };
+        dtpEnd.ValueChanged += (s, e) => ExecuteAdvancedSearch();
+
+        // 3. Botones Auxiliares Rápidos
+        btnToday = new Button { Text = "Hoy", Location = new Point(630, yRow1 - 2), Size = new Size(70, 27), BackColor = Color.WhiteSmoke };
+        btnToday.Click += (s, e) => SetDatesAndSearch(DateTime.Today, DateTime.Today);
+
+        btnYesterday = new Button { Text = "Ayer", Location = new Point(705, yRow1 - 2), Size = new Size(70, 27), BackColor = Color.WhiteSmoke };
+        btnYesterday.Click += (s, e) => SetDatesAndSearch(DateTime.Today.AddDays(-1), DateTime.Today.AddDays(-1));
+
+        btnThisWeek = new Button { Text = "Esta Semana", Location = new Point(780, yRow1 - 2), Size = new Size(95, 27), BackColor = Color.WhiteSmoke };
+        btnThisWeek.Click += (s, e) =>
+        {
+            // Lunes de la semana actual
+            int diff = (7 + (DateTime.Today.DayOfWeek - DayOfWeek.Monday)) % 7;
+            DateTime startOfWeek = DateTime.Today.AddDays(-1 * diff);
+            SetDatesAndSearch(startOfWeek, DateTime.Today);
+        };
+
+        // --- CUERPO PRINCIPAL (TABLAS) ---
+        int yTables = 75;
+
+        // Tabla Izquierda: Historial con ID visible
+        var lblTickets = new Label { Text = "Tickets Emitidos:", Location = new Point(20, yTables - 20), Size = new Size(200, 20), Font = new Font("Arial", 9, FontStyle.Italic) };
+        dgvSales = new DataGridView { Location = new Point(20, yTables), Size = new Size(480, 390), AllowUserToAddRows = false, ReadOnly = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, RowHeadersVisible = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, BackgroundColor = Color.White };
+        dgvSales.Columns.Add("FullId", "GUID Completo Oculto");
+        dgvSales.Columns.Add("ShortId", "ID Ticket"); // <--- NUEVA COLUMNA VISIBLE
         dgvSales.Columns.Add("Date", "Fecha y Hora");
         dgvSales.Columns.Add("Total", "Total Cobrado");
-        dgvSales.Columns["Id"].Visible = false; // Ocultamos el Guid para que no se vea feo, pero ahí se queda guardado
-        dgvSales.SelectionChanged += DgvSales_SelectionChanged; // EVENTO: Al hacer clic en un renglón, carga el detalle
 
-        // 3. Tabla Derecha: Desglose del Ticket seleccionado
-        var lblDetails = new Label { Text = "Detalles del Ticket Seleccionado:", Location = new Point(500, 60), Size = new Size(300, 20), Font = new Font("Arial", 9, FontStyle.Bold) };
-        dgvDetails = new DataGridView { Location = new Point(500, 80), Size = new Size(410, 340), AllowUserToAddRows = false, ReadOnly = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, RowHeadersVisible = false, BackgroundColor = Color.White };
+        dgvSales.Columns["FullId"].Visible = false; // Oculto para la lógica interna
+        dgvSales.Columns["ShortId"].FillWeight = 65; // Proporciones de tamaño de columna
+        dgvSales.Columns["Date"].FillWeight = 110;
+        dgvSales.Columns["Total"].FillWeight = 75;
+        dgvSales.SelectionChanged += DgvSales_SelectionChanged;
+
+        // Tabla Derecha: Detalles del Ticket
+        var lblDetails = new Label { Text = "Detalles del Ticket Seleccionado:", Location = new Point(520, yTables - 20), Size = new Size(300, 20), Font = new Font("Arial", 9, FontStyle.Bold) };
+        dgvDetails = new DataGridView { Location = new Point(520, yTables), Size = new Size(440, 390), AllowUserToAddRows = false, ReadOnly = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, RowHeadersVisible = false, BackgroundColor = Color.White };
         dgvDetails.Columns.Add("Barcode", "Código");
         dgvDetails.Columns.Add("Name", "Producto");
         dgvDetails.Columns.Add("Qty", "Cant.");
         dgvDetails.Columns.Add("Price", "Precio U.");
         dgvDetails.Columns.Add("Sub", "Subtotal");
+        dgvDetails.Columns["Qty"].FillWeight = 45;
+        dgvDetails.Columns["Sub"].FillWeight = 70;
 
-        // 4. Reporte de ingresos totalizado abajo
-        lblRevenue = new Label { Location = new Point(20, 445), Size = new Size(890, 40), Font = new Font("Arial", 14, FontStyle.Bold), ForeColor = Color.DarkGreen, TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.LightGray };
+        // Reporte final de ingresos acumulados
+        lblRevenue = new Label { Location = new Point(20, 490), Size = new Size(940, 40), Font = new Font("Arial", 14, FontStyle.Bold), ForeColor = Color.DarkGreen, TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Gainsboro };
 
-        this.Controls.AddRange(new Control[] { lblFilter, cmbFilter, lblTickets, dgvSales, lblDetails, dgvDetails, lblRevenue });
+        // Agregar controles al Formulario
+        this.Controls.AddRange(new Control[] {
+            lblSearchId, txtSearchId, lblStart, dtpStart, lblEnd, dtpEnd, btnToday, btnYesterday, btnThisWeek,
+            lblTickets, dgvSales, lblDetails, dgvDetails, lblRevenue
+        });
     }
 
-    private void CmbFilter_SelectedIndexChanged(object? sender, EventArgs e)
+    // Método auxiliar para setear fechas desde los botones rápidos sin disparar ciclos infinitos
+    private void SetDatesAndSearch(DateTime start, DateTime end)
     {
-        string filterType = "TODAY";
-        if (cmbFilter.SelectedIndex == 1) filterType = "MONTH";
-        if (cmbFilter.SelectedIndex == 2) filterType = "ALL";
-
-        LoadSales(filterType);
+        // Desactivamos eventos temporalmente para evitar ejecuciones dobles accidentales
+        dtpStart.Value = start;
+        dtpEnd.Value = end;
+        ExecuteAdvancedSearch();
     }
 
-    private void LoadSales(string filterType)
+    private void ExecuteAdvancedSearch()
     {
         dgvSales.Rows.Clear();
-        dgvDetails.Rows.Clear(); // Limpiar la derecha también
+        dgvDetails.Rows.Clear();
 
-        var sales = _productRepository.GetSalesHistory(filterType);
+        DateTime startDate = dtpStart.Value;
+        DateTime endDate = dtpEnd.Value;
+        string ticketFilter = txtSearchId.Text.Trim();
+
+        var sales = _productRepository.GetSalesHistoryAdvanced(startDate, endDate, ticketFilter);
         decimal totalRevenue = 0;
 
         foreach (var sale in sales)
         {
-            dgvSales.Rows.Add(sale.Id, sale.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"), $"${sale.Total:N2}");
+            // Mostramos los primeros 8 caracteres del ID en mayúsculas (ID Ticket) para que coincida con el formato del papel impreso
+            string shortId = sale.Id.ToString()[..8].ToUpper();
+
+            dgvSales.Rows.Add(sale.Id, shortId, sale.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"), $"${sale.Total:N2}");
             totalRevenue += sale.Total;
         }
 
-        string labelText = filterType == "TODAY" ? "Caja de Hoy" : (filterType == "MONTH" ? "Ventas del Mes" : "Historial General");
-        lblRevenue.Text = $"   Total en {labelText}: ${totalRevenue:N2}";
-    }
-
-    private void dgvSalesRowsAdd(Sale sale)
-    {
-        dgvSales.Rows.Add(sale.Id, sale.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"), $"${sale.Total:N2}");
+        lblRevenue.Text = $"   Ingresos Totales en Rango Seleccionado: ${totalRevenue:N2}";
     }
 
     private void DgvSales_SelectionChanged(object? sender, EventArgs e)
@@ -94,10 +144,8 @@ public partial class SalesHistoryForm : Form
 
         if (dgvSales.CurrentRow != null)
         {
-            // Recuperamos el Guid del ticket oculto en la columna 0
+            // Recuperamos el Guid completo guardado de forma segura en la columna 0
             Guid saleId = (Guid)dgvSales.CurrentRow.Cells[0].Value;
-
-            // Consultamos los detalles a la base de datos SQLite
             var details = _productRepository.GetSaleDetails(saleId);
 
             foreach (var item in details)

@@ -281,4 +281,48 @@ public class SqliteProductRepository : IProductRepository
             throw; // Re-lanzamos la excepción para que la UI se entere
         }
     }
+
+    public List<Sale> GetSalesHistoryAdvanced(DateTime startDate, DateTime endDate, string ticketIdFilter)
+    {
+        var sales = new List<Sale>();
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        // Filtramos usando la función date() de SQLite para comparar rangos de forma limpia (YYYY-MM-DD)
+        string query = @"
+        SELECT Id, CreatedAt, Total 
+        FROM Sales 
+        WHERE date(CreatedAt) >= date(@StartDate) 
+          AND date(CreatedAt) <= date(@EndDate)";
+
+        // Si el usuario escribió algo en el buscador de ID, añadimos la condición LIKE
+        if (!string.IsNullOrWhiteSpace(ticketIdFilter))
+        {
+            query += " AND Id LIKE @TicketId";
+        }
+
+        query += " ORDER BY CreatedAt DESC;";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@StartDate", startDate.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("@EndDate", endDate.ToString("yyyy-MM-dd"));
+
+        if (!string.IsNullOrWhiteSpace(ticketIdFilter))
+        {
+            // Añadimos comodines % para que busque coincidencias parciales (ej: los primeros 8 caracteres)
+            command.Parameters.AddWithValue("@TicketId", "%" + ticketIdFilter.Trim() + "%");
+        }
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            // Cabecera con Total de BD; el desglose se carga al seleccionar el ticket (GetSaleDetails)
+            sales.Add(new Sale(
+                Guid.Parse(reader.GetString(0)),
+                DateTime.Parse(reader.GetString(1)),
+                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) }
+            ));
+        }
+        return sales;
+    }
 }

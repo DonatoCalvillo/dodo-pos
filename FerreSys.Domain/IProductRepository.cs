@@ -27,4 +27,6 @@ public interface IProductRepository
     List<SaleItem> GetSaleDetails(Guid saleId);
 
     void SaveBulk(List<Product> products);
+
+    List<Sale> GetSalesHistoryAdvanced(DateTime startDate, DateTime endDate, string ticketIdFilter);
 }
