@@ -295,7 +295,7 @@ public class CashMovementsForm : Form
 
         lblStatus.Text = closed
             ? $"Día cerrado ({summary.ClosedAt:dd/MM/yyyy HH:mm}). Solo consulta."
-            : "Solo movimientos manuales (inyección/retiro). Las ventas se ven en Corte de caja.";
+            : "Solo movimientos manuales (inyección/retiro). Las ventas se ven en Corte X.";
         lblStatus.ForeColor = closed ? Color.DarkOrange : UiTheme.Text;
     }
 

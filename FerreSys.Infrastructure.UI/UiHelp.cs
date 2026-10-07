@@ -140,19 +140,19 @@ internal static class SectionHelpText
     public const string CashMovementsList =
         "Historial del día de entradas y salidas manuales.\n\n" +
         "• No incluye tickets de venta.\n" +
-        "• Los totales (Entradas / Salidas / Neto) alimentan el efectivo esperado del Corte de caja.\n" +
+        "• Los totales (Entradas / Salidas / Neto) alimentan el efectivo esperado del Corte X / Corte Z.\n" +
         "• Por ahora no se pueden editar ni borrar movimientos (solo alta).";
 
     public const string CashCloseOpening =
         "Fondo inicial del día: efectivo en cajón al abrir (para dar cambio).\n\n" +
         "• Se pide al iniciar la app; si cancelas, igual puedes cobrar.\n" +
-        "• Debes guardar el fondo antes de cerrar el día.\n" +
-        "• No se puede cambiar el fondo cuando el día ya está cerrado.";
+        "• Debes guardar el fondo antes del Corte Z.\n" +
+        "• No se puede cambiar el fondo cuando ya hay un Corte Z del día.";
 
     public const string CashCloseSales =
         "Totales cobrados en el día, separados por forma de pago.\n\n" +
-        "• Efectivo: suma de tickets en efectivo y la parte en efectivo de mixtos.\n" +
-        "• Tarjeta: suma de tickets con tarjeta y la parte con tarjeta de mixtos.\n" +
+        "• Ventas en efectivo: tickets en efectivo y la parte en efectivo de mixtos.\n" +
+        "• Ventas en tarjeta: tickets con tarjeta y la parte con tarjeta de mixtos.\n" +
         "• Solo lectura: las ventas se generan al cobrar en el mostrador.";
 
     public const string CashCloseMovements =
@@ -161,18 +161,36 @@ internal static class SectionHelpText
         "• Entran en la fórmula del efectivo esperado:\n" +
         "  Fondo + Ventas en efectivo + Entradas − Salidas.";
 
-    public const string CashCloseCount =
-        "Arqueo: compara el efectivo contado en cajón contra el esperado.\n\n" +
+    public const string CashCloseCountX =
+        "Corte X: consulta el efectivo que el sistema espera en cajón en este momento.\n\n" +
         "Esperado = Fondo + Ventas en efectivo + Entradas − Salidas.\n\n" +
-        "• Diferencia en cero: cuadra.\n" +
+        "No cierra el día; para declarar el conteo físico usa Corte Z.";
+
+    public const string CashCloseLastZ =
+        "Snapshot del último Corte Z guardado para este día.\n\n" +
+        "Incluye el desglose congelado al momento del cierre:\n" +
+        "fondo, ventas efectivo/tarjeta, entradas, salidas, esperado, declarado y descuadre.\n\n" +
+        "Si sigues cobrando después, los totales en vivo del Corte X pueden diferir de este snapshot.";
+
+    public const string CashCloseCountZ =
+        "Corte Z — conteo ciego.\n\n" +
+        "Ingresa solo el efectivo físico del cajón. El sistema no muestra lo esperado\n" +
+        "hasta que pulses Continuar, para no influir en el conteo.";
+
+    public const string CashCloseCountZReveal =
+        "Reporte de descuadre del Corte Z.\n\n" +
+        "Esperado = Fondo + Ventas en efectivo + Entradas − Salidas.\n" +
+        "Diferencia = Declarado − Esperado.\n\n" +
+        "• Cero: cuadra.\n" +
         "• Positiva: sobrante.\n" +
-        "• Negativa: faltante.\n" +
-        "• Puedes seguir cobrando después de cerrar y volver a actualizar el cierre.";
+        "• Negativa: faltante.\n\n" +
+        "Al guardar se persiste el snapshot en la base de datos.\n" +
+        "Puedes seguir cobrando y volver a actualizar el Corte Z.";
 
     public const string OpeningCashPrompt =
         "Declara cuánto efectivo hay en caja al abrir el turno.\n\n" +
-        "• Sirve para dar cambio y para el corte del día.\n" +
-        "• Cancelar no bloquea el mostrador; puedes declarar el fondo después en Corte de caja.\n" +
+        "• Sirve para dar cambio y para el Corte X / Corte Z.\n" +
+        "• Cancelar no bloquea el mostrador; puedes declarar el fondo después en Corte X.\n" +
         "• El monto no puede ser negativo.";
 
     public const string CheckoutTotal =

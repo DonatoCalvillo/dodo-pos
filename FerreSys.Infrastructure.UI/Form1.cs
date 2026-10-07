@@ -21,7 +21,8 @@ public partial class Form1 : Form
     private Button btnNewCart = null!;
     private Button btnCloseCart = null!;
     private ToolStripButton btnViewSales = null!;
-    private ToolStripButton btnCashClose = null!;
+    private ToolStripButton btnCashCloseX = null!;
+    private ToolStripButton btnCashCloseZ = null!;
     private ToolStripButton btnCashMovements = null!;
     private ToolStripButton btnImportExcel = null!;
 
@@ -128,11 +129,12 @@ public partial class Form1 : Form
 
         var mArchivo = new ToolStripMenuItem("&Archivo");
         var mVentas = new ToolStripMenuItem("Ver &Ventas...", null, (_, _) => OpenSales());
-        var mCorte = new ToolStripMenuItem("&Corte de caja...", null, (_, _) => OpenCashClose());
+        var mCorteX = new ToolStripMenuItem("Corte &X (estado de caja)...", null, (_, _) => OpenCashClose(CashCutMode.X));
+        var mCorteZ = new ToolStripMenuItem("Corte &Z (cierre)...", null, (_, _) => OpenCashClose(CashCutMode.Z));
         var mMovimientos = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
         var mImportar = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
         var mSalir = new ToolStripMenuItem("&Salir", null, (_, _) => Close());
-        mArchivo.DropDownItems.AddRange([mVentas, mCorte, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
+        mArchivo.DropDownItems.AddRange([mVentas, mCorteX, mCorteZ, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
 
         var mProductos = new ToolStripMenuItem("&Productos");
         mProductos.DropDownItems.Add(new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click));
@@ -165,8 +167,11 @@ public partial class Form1 : Form
         btnViewSales = CreateToolItem("Ver Ventas", UiIcons.Sales());
         btnViewSales.Click += (_, _) => OpenSales();
 
-        btnCashClose = CreateToolItem("Corte de caja", UiIcons.CashClose());
-        btnCashClose.Click += (_, _) => OpenCashClose();
+        btnCashCloseX = CreateToolItem("Corte X", UiIcons.CashClose());
+        btnCashCloseX.Click += (_, _) => OpenCashClose(CashCutMode.X);
+
+        btnCashCloseZ = CreateToolItem("Corte Z", UiIcons.CashClose());
+        btnCashCloseZ.Click += (_, _) => OpenCashClose(CashCutMode.Z);
 
         btnCashMovements = CreateToolItem("Movimientos", UiIcons.CashMovements());
         btnCashMovements.Click += (_, _) => OpenCashMovements();
@@ -185,7 +190,8 @@ public partial class Form1 : Form
 
         strip.Items.AddRange([
             btnViewSales,
-            btnCashClose,
+            btnCashCloseX,
+            btnCashCloseZ,
             btnCashMovements,
             btnImportExcel,
             btnOpenAddProduct,
@@ -600,12 +606,13 @@ public partial class Form1 : Form
         f.ShowDialog();
     }
 
-    private void OpenCashClose()
+    private void OpenCashClose(CashCutMode mode)
     {
         using var f = new CashCloseForm(
             _getDailyCashSummaryUseCase,
             _saveOpeningCashUseCase,
-            _closeCashDayUseCase);
+            _closeCashDayUseCase,
+            mode);
         f.ShowDialog();
     }
 
@@ -642,7 +649,7 @@ public partial class Form1 : Form
         }
         else
         {
-            lblStatus.Text = "Fondo del día no declarado. Puedes seguir cobrando o declararlo en Corte de caja.";
+            lblStatus.Text = "Fondo del día no declarado. Puedes seguir cobrando o declararlo en Corte X.";
             lblStatus.ForeColor = Color.DarkOrange;
         }
     }

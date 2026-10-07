@@ -34,7 +34,7 @@ public interface IProductRepository
 
     void SaveOpeningCash(DateTime businessDate, decimal openingCash);
 
-    void CloseCashDay(DateTime businessDate, decimal countedCash);
+    void CloseCashDay(DateTime businessDate, CashCloseReportSnapshot report);
 
     PaymentDayTotals GetPaymentTotals(DateTime businessDate);
 

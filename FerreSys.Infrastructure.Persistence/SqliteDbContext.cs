@@ -92,7 +92,13 @@ public class SqliteDbContext
             BusinessDate TEXT PRIMARY KEY,
             OpeningCash REAL NOT NULL,
             CountedCash REAL,
-            ClosedAt TEXT
+            ClosedAt TEXT,
+            CashSales REAL,
+            CardSales REAL,
+            CashEntries REAL,
+            CashExits REAL,
+            ExpectedCash REAL,
+            Difference REAL
         );
 
         CREATE TABLE IF NOT EXISTS CashMovements (
@@ -113,6 +119,34 @@ public class SqliteDbContext
         EnsureSaleDetailPriceColumns(connection);
         EnsureProductUnitColumn(connection);
         EnsureSaleDetailUnitColumn(connection);
+        EnsureCashCloseReportColumns(connection);
+    }
+
+    private static void EnsureCashCloseReportColumns(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(CashCloses);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        void AddColumnIfMissing(string name)
+        {
+            if (columns.Contains(name))
+                return;
+            using var alter = new SqliteCommand(
+                $"ALTER TABLE CashCloses ADD COLUMN {name} REAL;",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+
+        AddColumnIfMissing("CashSales");
+        AddColumnIfMissing("CardSales");
+        AddColumnIfMissing("CashEntries");
+        AddColumnIfMissing("CashExits");
+        AddColumnIfMissing("ExpectedCash");
+        AddColumnIfMissing("Difference");
     }
 
     private static void EnsureSalesPaymentColumns(SqliteConnection connection)

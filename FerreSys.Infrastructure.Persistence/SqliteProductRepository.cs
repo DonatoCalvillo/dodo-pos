@@ -295,7 +295,8 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         string query = @"
-            SELECT BusinessDate, OpeningCash, CountedCash, ClosedAt
+            SELECT BusinessDate, OpeningCash, CountedCash, ClosedAt,
+                   CashSales, CardSales, CashEntries, CashExits, ExpectedCash, Difference
             FROM CashCloses
             WHERE BusinessDate = @BusinessDate;";
 
@@ -313,7 +314,13 @@ public class SqliteProductRepository : IProductRepository
             DateTime.Parse(reader.GetString(0)),
             ReadMoney(reader, 1),
             counted,
-            closedAt);
+            closedAt,
+            reader.IsDBNull(4) ? null : ReadMoney(reader, 4),
+            reader.IsDBNull(5) ? null : ReadMoney(reader, 5),
+            reader.IsDBNull(6) ? null : ReadMoney(reader, 6),
+            reader.IsDBNull(7) ? null : ReadMoney(reader, 7),
+            reader.IsDBNull(8) ? null : ReadMoney(reader, 8),
+            reader.IsDBNull(9) ? null : ReadMoney(reader, 9));
     }
 
     public void SaveOpeningCash(DateTime businessDate, decimal openingCash)
@@ -332,20 +339,33 @@ public class SqliteProductRepository : IProductRepository
         command.ExecuteNonQuery();
     }
 
-    public void CloseCashDay(DateTime businessDate, decimal countedCash)
+    public void CloseCashDay(DateTime businessDate, CashCloseReportSnapshot report)
     {
         using var connection = _context.CreateConnection();
         connection.Open();
 
         string query = @"
             UPDATE CashCloses
-            SET CountedCash = @CountedCash, ClosedAt = @ClosedAt
+            SET CountedCash = @CountedCash,
+                ClosedAt = @ClosedAt,
+                CashSales = @CashSales,
+                CardSales = @CardSales,
+                CashEntries = @CashEntries,
+                CashExits = @CashExits,
+                ExpectedCash = @ExpectedCash,
+                Difference = @Difference
             WHERE BusinessDate = @BusinessDate;";
 
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@BusinessDate", businessDate.ToString("yyyy-MM-dd"));
-        command.Parameters.AddWithValue("@CountedCash", countedCash);
+        command.Parameters.AddWithValue("@CountedCash", report.CountedCash);
         command.Parameters.AddWithValue("@ClosedAt", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        command.Parameters.AddWithValue("@CashSales", report.CashSales);
+        command.Parameters.AddWithValue("@CardSales", report.CardSales);
+        command.Parameters.AddWithValue("@CashEntries", report.CashEntries);
+        command.Parameters.AddWithValue("@CashExits", report.CashExits);
+        command.Parameters.AddWithValue("@ExpectedCash", report.ExpectedCash);
+        command.Parameters.AddWithValue("@Difference", report.Difference);
 
         if (command.ExecuteNonQuery() == 0)
             throw new InvalidOperationException("Guarda el fondo de caja antes de cerrar el día.");

@@ -17,10 +17,24 @@ public class DailyCashSummary
     public DateTime? ClosedAt { get; init; }
     public DateTime? LastSaleAt { get; init; }
 
+    /// <summary>Snapshot del último Corte Z (si existe).</summary>
+    public decimal? LastCloseCashSales { get; init; }
+    public decimal? LastCloseCardSales { get; init; }
+    public decimal? LastCloseCashEntries { get; init; }
+    public decimal? LastCloseCashExits { get; init; }
+    public decimal? LastCloseExpectedCash { get; init; }
+    public decimal? LastCloseCountedCash { get; init; }
+    public decimal? LastCloseDifference { get; init; }
+
     public decimal TotalSales => CashSales + CardSales;
     public decimal CashMovementsNet => CashEntries - CashExits;
     public decimal ExpectedCash => OpeningCash + CashSales + CashEntries - CashExits;
     public decimal? Difference => CountedCash is decimal counted ? counted - ExpectedCash : null;
+
+    public bool HasLastCloseReport =>
+        ClosedAt != null &&
+        LastCloseExpectedCash != null &&
+        LastCloseCountedCash != null;
 
     public bool IsStale =>
         ClosedAt is DateTime closed &&
@@ -57,7 +71,14 @@ public class GetDailyCashSummaryUseCase
             CashExits = movements.Exits,
             CountedCash = close?.CountedCash,
             ClosedAt = close?.ClosedAt,
-            LastSaleAt = totals.LastSaleAt
+            LastSaleAt = totals.LastSaleAt,
+            LastCloseCashSales = close?.CashSales,
+            LastCloseCardSales = close?.CardSales,
+            LastCloseCashEntries = close?.CashEntries,
+            LastCloseCashExits = close?.CashExits,
+            LastCloseExpectedCash = close?.ExpectedCash,
+            LastCloseCountedCash = close?.CountedCash,
+            LastCloseDifference = close?.Difference
         };
     }
 }
