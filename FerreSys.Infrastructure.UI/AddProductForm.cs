@@ -16,9 +16,10 @@ public partial class AddProductForm : Form
     private NumericUpDown numRetailPrice = null!;
     private ComboBox cboUnit = null!;
     private NumericUpDown numStock = null!;
+    private NumericUpDown numMinStock = null!;
+    private NumericUpDown numDesiredStock = null!;
     private Button btnSave = null!;
 
-    // CONSTRUCTOR 1: Para registrar un producto nuevo (el que ya tenías)
     public AddProductForm(AddProductUseCase addProductUseCase)
     {
         _addProductUseCase = addProductUseCase;
@@ -26,7 +27,6 @@ public partial class AddProductForm : Form
         InitializeComponent();
     }
 
-    // CONSTRUCTOR 2: Nuevo constructor para el Modo Edición
     public AddProductForm(UpdateProductUseCase updateProductUseCase, Product productToEdit)
     {
         _updateProductUseCase = updateProductUseCase;
@@ -39,7 +39,7 @@ public partial class AddProductForm : Form
     private void InitializeComponent()
     {
         this.Text = _isEditMode ? "Editar Producto - FerreSys" : "Registrar Nuevo Producto - FerreSys";
-        this.Size = new Size(420, 520);
+        this.Size = new Size(420, 620);
         this.FormBorderStyle = FormBorderStyle.FixedDialog;
         this.MaximizeBox = false;
         this.StartPosition = FormStartPosition.CenterParent;
@@ -49,7 +49,7 @@ public partial class AddProductForm : Form
 
         var lblBarcode = new Label { Text = "Código de Barras:", Location = new Point(labelLeft, 30), Size = new Size(110, 20) };
         txtBarcode = new TextBox { Location = new Point(inputLeft, 28), Size = new Size(200, 25) };
-        if (_isEditMode) txtBarcode.ReadOnly = true; // Bloquear código de barras en edición
+        if (_isEditMode) txtBarcode.ReadOnly = true;
 
         var lblName = new Label { Text = "Nombre:", Location = new Point(labelLeft, 80), Size = new Size(110, 20) };
         txtName = new TextBox { Location = new Point(inputLeft, 78), Size = new Size(200, 25) };
@@ -81,13 +81,38 @@ public partial class AddProductForm : Form
             DecimalPlaces = 0
         };
 
-        // CORRECCIÓN DE SEGURIDAD:
-        if (_isEditMode) numStock.Enabled = false; // Bloquea el control para que nadie lo altere a mano
+        if (_isEditMode) numStock.Enabled = false;
+
+        var lblMinStock = new Label { Text = "Stock Mínimo:", Location = new Point(labelLeft, 330), Size = new Size(110, 20) };
+        numMinStock = new NumericUpDown
+        {
+            Location = new Point(inputLeft, 328),
+            Size = new Size(200, 25),
+            Maximum = 999999,
+            DecimalPlaces = 0
+        };
+
+        var lblDesiredStock = new Label { Text = "Stock Deseado:", Location = new Point(labelLeft, 380), Size = new Size(110, 20) };
+        numDesiredStock = new NumericUpDown
+        {
+            Location = new Point(inputLeft, 378),
+            Size = new Size(200, 25),
+            Maximum = 999999,
+            DecimalPlaces = 0
+        };
+
+        var lblHint = new Label
+        {
+            Text = "Mínimo = 0 desactiva la alerta. Deseado se usa para el sugerido de compra.",
+            Location = new Point(labelLeft, 415),
+            Size = new Size(340, 36),
+            ForeColor = Color.DimGray
+        };
 
         btnSave = new Button
         {
             Text = _isEditMode ? "Guardar Cambios" : "Guardar Producto",
-            Location = new Point(30, 350),
+            Location = new Point(30, 465),
             Size = new Size(320, 40),
             BackColor = _isEditMode ? Color.LightGoldenrodYellow : Color.LightBlue,
             Font = new Font("Arial", 10, FontStyle.Bold)
@@ -97,7 +122,8 @@ public partial class AddProductForm : Form
         this.Controls.AddRange(new Control[]
         {
             lblBarcode, txtBarcode, lblName, txtName, lblCost, numCostPrice,
-            lblRetail, numRetailPrice, lblUnit, cboUnit, lblStock, numStock, btnSave
+            lblRetail, numRetailPrice, lblUnit, cboUnit, lblStock, numStock,
+            lblMinStock, numMinStock, lblDesiredStock, numDesiredStock, lblHint, btnSave
         });
     }
 
@@ -112,6 +138,8 @@ public partial class AddProductForm : Form
             cboUnit.SelectedIndex = (int)_productToEdit.Unit;
             ApplyStockDecimalsForSelectedUnit();
             numStock.Value = Math.Min(numStock.Maximum, _productToEdit.Stock);
+            numMinStock.Value = Math.Min(numMinStock.Maximum, _productToEdit.MinStock);
+            numDesiredStock.Value = Math.Min(numDesiredStock.Maximum, _productToEdit.DesiredStock);
         }
     }
 
@@ -124,8 +152,13 @@ public partial class AddProductForm : Form
     {
         var unit = SelectedUnit();
         int places = unit.MaxDecimalPlaces();
-        numStock.DecimalPlaces = places;
-        numStock.Increment = places > 0 ? 0.001m : 1m;
+        decimal increment = places > 0 ? 0.001m : 1m;
+
+        foreach (var num in new[] { numStock, numMinStock, numDesiredStock })
+        {
+            num.DecimalPlaces = places;
+            num.Increment = increment;
+        }
     }
 
     private void BtnSave_Click(object? sender, EventArgs e)
@@ -142,7 +175,9 @@ public partial class AddProductForm : Form
                 numCostPrice.Value,
                 numRetailPrice.Value,
                 numStock.Value,
-                unit
+                unit,
+                numMinStock.Value,
+                numDesiredStock.Value
             );
 
             if (_isEditMode)

@@ -6,6 +6,9 @@ namespace FerreSys.Infrastructure.Persistence;
 
 public class SqliteProductRepository : IProductRepository
 {
+    private const string ProductSelect =
+        "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock FROM Products";
+
     private readonly SqliteDbContext _context;
 
     public SqliteProductRepository(SqliteDbContext context)
@@ -19,8 +22,8 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         string query = @"
-            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit)
-            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit);";
+            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
+            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
 
         using var command = new SqliteCommand(query, connection);
         BindProductParameters(command, product);
@@ -32,7 +35,7 @@ public class SqliteProductRepository : IProductRepository
         using var connection = _context.CreateConnection();
         connection.Open();
 
-        string query = "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit FROM Products WHERE Barcode = @Barcode LIMIT 1;";
+        string query = ProductSelect + " WHERE Barcode = @Barcode LIMIT 1;";
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@Barcode", barcode);
 
@@ -50,7 +53,7 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         // Filtro Fuzzy simple usando LIKE. El operador % busca coincidencias en cualquier parte del texto.
-        string query = "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit FROM Products WHERE Name LIKE @Term;";
+        string query = ProductSelect + " WHERE Name LIKE @Term;";
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@Term", $"%{term}%");
 
@@ -79,7 +82,8 @@ public class SqliteProductRepository : IProductRepository
 
         string query = @"
             UPDATE Products 
-            SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock, Unit = @Unit 
+            SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock,
+                Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock
             WHERE Id = @Id;";
 
         using var command = new SqliteCommand(query, connection);
@@ -228,8 +232,8 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             string query = @"
-            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit)
-            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit);";
+            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
+            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
 
             foreach (var product in products)
             {
@@ -518,6 +522,36 @@ public class SqliteProductRepository : IProductRepository
         return new CashMovementDayTotals(ReadMoney(reader, 0), ReadMoney(reader, 1));
     }
 
+    public List<ReorderSuggestionLine> GetReorderSuggestions()
+    {
+        var lines = new List<ReorderSuggestionLine>();
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = ProductSelect + @"
+            WHERE Stock <= 0
+               OR (MinStock > 0 AND Stock <= MinStock)
+            ORDER BY
+                CASE WHEN Stock <= 0 THEN 0 ELSE 1 END,
+                Name COLLATE NOCASE;";
+
+        using var command = new SqliteCommand(query, connection);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var product = MapProduct(reader);
+            lines.Add(new ReorderSuggestionLine(
+                product.Barcode,
+                product.Name,
+                product.Unit,
+                product.Stock,
+                product.MinStock,
+                product.DesiredStock));
+        }
+
+        return lines;
+    }
+
     private static Sale MapSaleHeader(SqliteDataReader reader)
     {
         decimal total = reader.GetDecimal(2);
@@ -546,6 +580,24 @@ public class SqliteProductRepository : IProductRepository
             unit.MaxDecimalPlaces(),
             MidpointRounding.AwayFromZero);
 
+        decimal minStock = 0m;
+        if (reader.FieldCount > 7 && !reader.IsDBNull(7))
+        {
+            minStock = decimal.Round(
+                Convert.ToDecimal(reader.GetValue(7)),
+                unit.MaxDecimalPlaces(),
+                MidpointRounding.AwayFromZero);
+        }
+
+        decimal desiredStock = 0m;
+        if (reader.FieldCount > 8 && !reader.IsDBNull(8))
+        {
+            desiredStock = decimal.Round(
+                Convert.ToDecimal(reader.GetValue(8)),
+                unit.MaxDecimalPlaces(),
+                MidpointRounding.AwayFromZero);
+        }
+
         return new Product(
             Guid.Parse(reader.GetString(0)),
             reader.GetString(1),
@@ -553,7 +605,9 @@ public class SqliteProductRepository : IProductRepository
             reader.GetDecimal(3),
             reader.GetDecimal(4),
             stock,
-            unit);
+            unit,
+            minStock,
+            desiredStock);
     }
 
     private static void BindProductParameters(SqliteCommand command, Product product)
@@ -565,6 +619,8 @@ public class SqliteProductRepository : IProductRepository
         command.Parameters.AddWithValue("@RetailPrice", product.RetailPrice);
         command.Parameters.AddWithValue("@Stock", product.Stock);
         command.Parameters.AddWithValue("@Unit", product.Unit.ToString());
+        command.Parameters.AddWithValue("@MinStock", product.MinStock);
+        command.Parameters.AddWithValue("@DesiredStock", product.DesiredStock);
     }
 
     private static decimal ReadMoney(SqliteDataReader reader, int ordinal) =>

@@ -33,7 +33,9 @@ public class AdjustStockUseCase
             product.CostPrice,
             product.RetailPrice,
             newStock,
-            product.Unit
+            product.Unit,
+            product.MinStock,
+            product.DesiredStock
         );
 
         // 3. Mandamos a actualizar mediante el repositorio

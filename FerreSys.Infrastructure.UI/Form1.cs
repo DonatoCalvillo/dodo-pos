@@ -22,10 +22,12 @@ public partial class Form1 : Form
     private Button btnCloseCart = null!;
     private ToolStripButton btnViewSales = null!;
     private ToolStripButton btnGrossProfit = null!;
+    private ToolStripButton btnPurchaseSuggestion = null!;
     private ToolStripButton btnCashCloseX = null!;
     private ToolStripButton btnCashCloseZ = null!;
     private ToolStripButton btnCashMovements = null!;
     private ToolStripButton btnImportExcel = null!;
+    private ToolStripStatusLabel lblStockAlerts = null!;
 
     private readonly List<CartSession> _cartSessions = [];
     private int _activeSessionIndex;
@@ -41,6 +43,7 @@ public partial class Form1 : Form
     private readonly ProcessSaleUseCase _processSaleUseCase;
     private readonly GetDailyCashSummaryUseCase _getDailyCashSummaryUseCase;
     private readonly GetGrossProfitSummaryUseCase _getGrossProfitSummaryUseCase;
+    private readonly GetReorderSuggestionsUseCase _getReorderSuggestionsUseCase;
     private readonly SaveOpeningCashUseCase _saveOpeningCashUseCase;
     private readonly CloseCashDayUseCase _closeCashDayUseCase;
     private readonly GetCashMovementsUseCase _getCashMovementsUseCase;
@@ -61,6 +64,7 @@ public partial class Form1 : Form
         _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
         _getDailyCashSummaryUseCase = new GetDailyCashSummaryUseCase(_productRepository);
         _getGrossProfitSummaryUseCase = new GetGrossProfitSummaryUseCase(_productRepository);
+        _getReorderSuggestionsUseCase = new GetReorderSuggestionsUseCase(_productRepository);
         _saveOpeningCashUseCase = new SaveOpeningCashUseCase(_productRepository);
         _closeCashDayUseCase = new CloseCashDayUseCase(_productRepository);
         _getCashMovementsUseCase = new GetCashMovementsUseCase(_productRepository);
@@ -119,6 +123,7 @@ public partial class Form1 : Form
 
         SetupSearchContextMenu();
         CalculateTotal();
+        RefreshStockAlerts();
         txtBuscador.Focus();
     }
 
@@ -133,15 +138,17 @@ public partial class Form1 : Form
         var mArchivo = new ToolStripMenuItem("&Archivo");
         var mVentas = new ToolStripMenuItem("Ver &Ventas...", null, (_, _) => OpenSales());
         var mUtilidad = new ToolStripMenuItem("&Utilidad bruta / ganancia neta...", null, (_, _) => OpenGrossProfitReport());
+        var mSugerido = new ToolStripMenuItem("&Sugerido de compra...", null, (_, _) => OpenPurchaseSuggestion());
         var mCorteX = new ToolStripMenuItem("Corte &X (estado de caja)...", null, (_, _) => OpenCashClose(CashCutMode.X));
         var mCorteZ = new ToolStripMenuItem("Corte &Z (cierre)...", null, (_, _) => OpenCashClose(CashCutMode.Z));
         var mMovimientos = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
         var mImportar = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
         var mSalir = new ToolStripMenuItem("&Salir", null, (_, _) => Close());
-        mArchivo.DropDownItems.AddRange([mVentas, mUtilidad, mCorteX, mCorteZ, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
+        mArchivo.DropDownItems.AddRange([mVentas, mUtilidad, mSugerido, mCorteX, mCorteZ, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
 
         var mProductos = new ToolStripMenuItem("&Productos");
         mProductos.DropDownItems.Add(new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click));
+        mProductos.DropDownItems.Add(new ToolStripMenuItem("Sugerido de &compra...", null, (_, _) => OpenPurchaseSuggestion()));
 
         var mVenta = new ToolStripMenuItem("&Venta");
         mVenta.DropDownItems.Add(new ToolStripMenuItem("&Cobrar (F5)", null, BtnCheckout_Click));
@@ -174,6 +181,9 @@ public partial class Form1 : Form
         btnGrossProfit = CreateToolItem("Utilidad", UiIcons.GrossProfit());
         btnGrossProfit.Click += (_, _) => OpenGrossProfitReport();
 
+        btnPurchaseSuggestion = CreateToolItem("Sugerido", UiIcons.Reorder());
+        btnPurchaseSuggestion.Click += (_, _) => OpenPurchaseSuggestion();
+
         btnCashCloseX = CreateToolItem("Corte X", UiIcons.CashClose());
         btnCashCloseX.Click += (_, _) => OpenCashClose(CashCutMode.X);
 
@@ -198,6 +208,7 @@ public partial class Form1 : Form
         strip.Items.AddRange([
             btnViewSales,
             btnGrossProfit,
+            btnPurchaseSuggestion,
             btnCashCloseX,
             btnCashCloseZ,
             btnCashMovements,
@@ -496,6 +507,16 @@ public partial class Form1 : Form
             TextAlign = ContentAlignment.MiddleLeft
         };
 
+        lblStockAlerts = new ToolStripStatusLabel("")
+        {
+            IsLink = true,
+            LinkBehavior = LinkBehavior.HoverUnderline,
+            Visible = false,
+            BorderSides = ToolStripStatusLabelBorderSides.Left,
+            BorderStyle = Border3DStyle.Etched
+        };
+        lblStockAlerts.Click += (_, _) => OpenPurchaseSuggestion();
+
         var connected = new ToolStripStatusLabel(" Conectado")
         {
             Image = UiIcons.StatusDot(UiTheme.StatusOk),
@@ -505,6 +526,7 @@ public partial class Form1 : Form
         };
 
         status.Items.Add(lblStatus);
+        status.Items.Add(lblStockAlerts);
         status.Items.Add(connected);
         status.Items.Add(new ToolStripStatusLabel("Mostrador") { BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched });
         status.Items.Add(new ToolStripStatusLabel("FerreSys MVP") { BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched });
@@ -614,6 +636,14 @@ public partial class Form1 : Form
         f.ShowDialog();
     }
 
+    private void OpenPurchaseSuggestion()
+    {
+        using var f = new PurchaseSuggestionForm(_getReorderSuggestionsUseCase);
+        f.ShowDialog(this);
+        RefreshStockAlerts();
+        RefreshSearchIfActive();
+    }
+
     private void OpenGrossProfitReport()
     {
         using var f = new GrossProfitReportForm(_getGrossProfitSummaryUseCase);
@@ -695,6 +725,49 @@ public partial class Form1 : Form
 
     private void SetStatus(string message) => lblStatus.Text = message;
 
+    private void RefreshStockAlerts()
+    {
+        var summary = _getReorderSuggestionsUseCase.Execute();
+        if (summary.TotalItems == 0)
+        {
+            lblStockAlerts.Visible = false;
+            lblStockAlerts.Text = "";
+            return;
+        }
+
+        var parts = new List<string>();
+        if (summary.OutOfStockCount > 0)
+            parts.Add($"{summary.OutOfStockCount} agotado(s)");
+        if (summary.BelowMinimumCount > 0)
+            parts.Add($"{summary.BelowMinimumCount} bajo mínimo");
+
+        lblStockAlerts.Text = " " + string.Join(" · ", parts);
+        lblStockAlerts.ForeColor = summary.OutOfStockCount > 0 ? UiTheme.StatusDanger : UiTheme.StatusWarn;
+        lblStockAlerts.LinkColor = lblStockAlerts.ForeColor;
+        lblStockAlerts.VisitedLinkColor = lblStockAlerts.ForeColor;
+        lblStockAlerts.ActiveLinkColor = lblStockAlerts.ForeColor;
+        lblStockAlerts.Image = UiIcons.StatusDot(
+            summary.OutOfStockCount > 0 ? UiTheme.StatusDanger : UiTheme.StatusWarn);
+        lblStockAlerts.TextImageRelation = TextImageRelation.ImageBeforeText;
+        lblStockAlerts.Visible = true;
+    }
+
+    private void RefreshSearchIfActive()
+    {
+        if (txtBuscador.Text.Trim().Length > 0)
+            TxtBuscador_TextChanged(txtBuscador, EventArgs.Empty);
+    }
+
+    private static void ApplyStockAlertRowStyle(DataGridViewRow row, Product product)
+    {
+        row.DefaultCellStyle.BackColor = product.AlertLevel switch
+        {
+            StockAlertLevel.Critical => UiTheme.StockDanger,
+            StockAlertLevel.Warning => UiTheme.StockWarn,
+            _ => Color.White
+        };
+    }
+
     private void TxtBuscador_TextChanged(object? sender, EventArgs e)
     {
         string term = txtBuscador.Text.Trim();
@@ -705,7 +778,10 @@ public partial class Form1 : Form
             List<Product> matches = _searchProductsUseCase.Execute(term);
             foreach (var p in matches)
             {
-                dgvSearch.Rows.Add(p.Barcode, p.Name, p.RetailPrice, p.Unit.FormatQuantity(p.Stock));
+                int idx = dgvSearch.Rows.Add(p.Barcode, p.Name, p.RetailPrice, p.Unit.FormatQuantity(p.Stock));
+                var row = dgvSearch.Rows[idx];
+                row.Tag = p;
+                ApplyStockAlertRowStyle(row, p);
             }
             SetStatus($"Búsqueda: {matches.Count} resultado(s) para \"{term}\"");
         }
@@ -1047,6 +1123,7 @@ public partial class Form1 : Form
             ClearActiveCartSession();
             txtBuscador.Clear();
             dgvSearch.Rows.Clear();
+            RefreshStockAlerts();
             txtBuscador.Focus();
         }
         catch (Exception ex)
@@ -1062,6 +1139,7 @@ public partial class Form1 : Form
         {
             txtBuscador.Clear();
             SetStatus("Producto registrado");
+            RefreshStockAlerts();
         }
     }
 
@@ -1205,6 +1283,7 @@ public partial class Form1 : Form
                 {
                     TxtBuscador_TextChanged(this, EventArgs.Empty);
                     SetStatus("Producto actualizado");
+                    RefreshStockAlerts();
                 }
             }
         }
@@ -1247,6 +1326,7 @@ public partial class Form1 : Form
 
                     TxtBuscador_TextChanged(this, EventArgs.Empty);
                     SetStatus($"Importados {result.Products.Count} productos; {result.SkippedByLimit} omitidos por el límite");
+                    RefreshStockAlerts();
                 }
                 else
                 {
@@ -1259,6 +1339,7 @@ public partial class Form1 : Form
 
                     TxtBuscador_TextChanged(this, EventArgs.Empty);
                     SetStatus($"Importados {result.Products.Count} productos");
+                    RefreshStockAlerts();
                 }
             }
             catch (FormatException ex)
@@ -1290,6 +1371,7 @@ public partial class Form1 : Form
                 {
                     TxtBuscador_TextChanged(this, EventArgs.Empty);
                     SetStatus("Stock ajustado");
+                    RefreshStockAlerts();
                 }
             }
         }

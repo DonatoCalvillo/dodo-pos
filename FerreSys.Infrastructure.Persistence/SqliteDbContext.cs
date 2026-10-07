@@ -60,7 +60,9 @@ public class SqliteDbContext
             CostPrice REAL NOT NULL,
             RetailPrice REAL NOT NULL,
             Stock REAL NOT NULL,
-            Unit TEXT NOT NULL DEFAULT 'Pieza'
+            Unit TEXT NOT NULL DEFAULT 'Pieza',
+            MinStock REAL NOT NULL DEFAULT 0,
+            DesiredStock REAL NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_products_barcode ON Products(Barcode);
 
@@ -118,6 +120,7 @@ public class SqliteDbContext
         EnsureSalesPaymentColumns(connection);
         EnsureSaleDetailPriceColumns(connection);
         EnsureProductUnitColumn(connection);
+        EnsureProductReorderColumns(connection);
         EnsureSaleDetailUnitColumn(connection);
         EnsureCashCloseReportColumns(connection);
     }
@@ -236,6 +239,32 @@ public class SqliteDbContext
         {
             using var alter = new SqliteCommand(
                 "ALTER TABLE Products ADD COLUMN Unit TEXT NOT NULL DEFAULT 'Pieza';",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+    }
+
+    private static void EnsureProductReorderColumns(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(Products);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        if (!columns.Contains("MinStock"))
+        {
+            using var alter = new SqliteCommand(
+                "ALTER TABLE Products ADD COLUMN MinStock REAL NOT NULL DEFAULT 0;",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+
+        if (!columns.Contains("DesiredStock"))
+        {
+            using var alter = new SqliteCommand(
+                "ALTER TABLE Products ADD COLUMN DesiredStock REAL NOT NULL DEFAULT 0;",
                 connection);
             alter.ExecuteNonQuery();
         }

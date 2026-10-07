@@ -217,7 +217,8 @@ internal static class SectionHelpText
     public const string CatalogResults =
         "Resultados del catálogo según la búsqueda.\n\n" +
         "• Muestra código, descripción, precio y stock.\n" +
-        "• El stock se descuenta al confirmar la venta, no al añadir al carrito.";
+        "• El stock se descuenta al confirmar la venta, no al añadir al carrito.\n" +
+        "• Amarillo: stock bajo el mínimo. Rojo: agotado.";
 
     public const string SaleSummary =
         "Resumen de la venta activa: artículos, líneas y total.\n\n" +
@@ -253,4 +254,17 @@ internal static class SectionHelpText
         "• Ganancia neta = Total vendido − Costo total vendido.\n" +
         "• Margen % = Ganancia neta ÷ Total vendido × 100.\n\n" +
         "Si no hay ventas en el rango, el margen es 0 %.";
+
+    public const string PurchaseSuggestion =
+        "Listado de productos agotados o por debajo del stock mínimo.\n\n" +
+        "• A pedir = Stock deseado − Stock actual (mínimo 0).\n" +
+        "• Rojo: agotado. Amarillo: bajo el mínimo.\n" +
+        "• Exporta a CSV o imprime / Guarda como PDF desde Windows.\n\n" +
+        "Configura mínimo y deseado al registrar o editar cada producto.";
+
+    public const string PurchaseSuggestionList =
+        "Productos que requieren reabastecimiento.\n\n" +
+        "• Orden: primero agotados, luego bajo mínimo.\n" +
+        "• Usa Exportar CSV para enviar el listado al proveedor.\n" +
+        "• Imprimir / PDF abre la vista previa y el diálogo de impresión de Windows.";
 }

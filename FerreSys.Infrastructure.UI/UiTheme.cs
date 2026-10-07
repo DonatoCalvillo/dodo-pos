@@ -8,6 +8,10 @@ internal static class UiTheme
     public static readonly Color Text = SystemColors.ControlText;
     public static readonly Color Total = Color.FromArgb(0, 60, 140);
     public static readonly Color StatusOk = Color.FromArgb(0, 140, 40);
+    public static readonly Color StatusWarn = Color.FromArgb(180, 110, 0);
+    public static readonly Color StatusDanger = Color.FromArgb(170, 40, 40);
+    public static readonly Color StockWarn = Color.FromArgb(255, 248, 200);
+    public static readonly Color StockDanger = Color.FromArgb(255, 220, 220);
 
     public static readonly Font Ui = new("Tahoma", 8.25f);
     public static readonly Font UiBold = new("Tahoma", 8.25f, FontStyle.Bold);
@@ -134,6 +138,19 @@ internal static class UiIcons
         g.FillRectangle(bar, 17, 5, 4, 15);
         g.DrawLine(pen, 3, 20, 21, 20);
         g.DrawLine(pen, 3, 4, 3, 20);
+    });
+
+    public static Bitmap Reorder(int size = 24) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);
+        using var box = new SolidBrush(Color.FromArgb(230, 190, 70));
+        g.FillRectangle(box, 4, 10, 16, 10);
+        g.DrawRectangle(pen, 4, 10, 16, 10);
+        g.DrawLine(pen, 4, 14, 20, 14);
+        using var arrow = new Pen(Color.FromArgb(0, 100, 160), 2.1f);
+        g.DrawLine(arrow, 12, 3, 12, 9);
+        g.DrawLine(arrow, 9, 6, 12, 9);
+        g.DrawLine(arrow, 15, 6, 12, 9);
     });
 
     public static Bitmap Checkout(int size = 22) => Draw(size, g =>

@@ -23,6 +23,12 @@ public class Product
     // Selling / inventory unit of measure
     public UnitOfMeasure Unit { get; private set; }
 
+    // Reorder threshold; 0 disables below-minimum alerts
+    public decimal MinStock { get; private set; }
+
+    // Target / maximum stock used for purchase suggestions
+    public decimal DesiredStock { get; private set; }
+
     public Product(
         Guid id,
         string barcode,
@@ -30,7 +36,9 @@ public class Product
         decimal costPrice,
         decimal retailPrice,
         decimal stock,
-        UnitOfMeasure unit = UnitOfMeasure.Pieza)
+        UnitOfMeasure unit = UnitOfMeasure.Pieza,
+        decimal minStock = 0m,
+        decimal desiredStock = 0m)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("El nombre del producto no puede estar vacío.");
@@ -41,7 +49,18 @@ public class Product
         if (stock < 0)
             throw new ArgumentException("El stock inicial no puede ser negativo.");
 
+        if (minStock < 0)
+            throw new ArgumentException("El stock mínimo no puede ser negativo.");
+
+        if (desiredStock < 0)
+            throw new ArgumentException("El stock deseado no puede ser negativo.");
+
+        if (minStock > 0m && desiredStock > 0m && desiredStock < minStock)
+            throw new ArgumentException("El stock deseado no puede ser menor al stock mínimo.");
+
         ValidateQuantityForUnit(stock, unit, allowZero: true);
+        ValidateQuantityForUnit(minStock, unit, allowZero: true);
+        ValidateQuantityForUnit(desiredStock, unit, allowZero: true);
 
         Id = id;
         Barcode = barcode;
@@ -50,7 +69,24 @@ public class Product
         RetailPrice = retailPrice;
         Stock = stock;
         Unit = unit;
+        MinStock = minStock;
+        DesiredStock = desiredStock;
     }
+
+    public bool IsOutOfStock => Stock <= 0m;
+
+    public bool IsBelowMinimum => MinStock > 0m && Stock <= MinStock;
+
+    public decimal SuggestedOrderQty => Math.Max(0m, DesiredStock - Stock);
+
+    public StockAlertLevel AlertLevel =>
+        IsOutOfStock
+            ? StockAlertLevel.Critical
+            : IsBelowMinimum
+                ? StockAlertLevel.Warning
+                : StockAlertLevel.None;
+
+    public bool NeedsReorder => IsOutOfStock || IsBelowMinimum;
 
     // BUSINESS RULE: Deduct stock on checkout
     public void RecordSale(decimal quantity)

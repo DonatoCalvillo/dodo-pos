@@ -45,4 +45,6 @@ public interface IProductRepository
     List<CashMovement> GetCashMovements(DateTime businessDate);
 
     CashMovementDayTotals GetCashMovementTotals(DateTime businessDate);
+
+    List<ReorderSuggestionLine> GetReorderSuggestions();
 }
