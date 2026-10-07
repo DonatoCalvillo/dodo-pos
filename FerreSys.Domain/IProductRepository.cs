@@ -38,6 +38,8 @@ public interface IProductRepository
 
     PaymentDayTotals GetPaymentTotals(DateTime businessDate);
 
+    GrossProfitTotals GetGrossProfitTotals(DateTime startDate, DateTime endDate);
+
     void SaveCashMovement(CashMovement movement);
 
     List<CashMovement> GetCashMovements(DateTime businessDate);

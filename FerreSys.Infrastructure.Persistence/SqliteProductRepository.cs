@@ -422,6 +422,32 @@ public class SqliteProductRepository : IProductRepository
             lastSaleAt);
     }
 
+    public GrossProfitTotals GetGrossProfitTotals(DateTime startDate, DateTime endDate)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            SELECT
+                COALESCE(SUM(d.Quantity * COALESCE(d.UnitPrice, d.PriceSold)), 0),
+                COALESCE(SUM(d.Quantity * COALESCE(d.CostPrice, 0)), 0)
+            FROM SaleDetails d
+            INNER JOIN Sales s ON s.Id = d.SaleId
+            WHERE date(s.CreatedAt) >= date(@StartDate)
+              AND date(s.CreatedAt) <= date(@EndDate);";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@StartDate", startDate.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("@EndDate", endDate.ToString("yyyy-MM-dd"));
+
+        using var reader = command.ExecuteReader();
+        reader.Read();
+
+        return new GrossProfitTotals(
+            ReadMoney(reader, 0),
+            ReadMoney(reader, 1));
+    }
+
     public void SaveCashMovement(CashMovement movement)
     {
         using var connection = _context.CreateConnection();

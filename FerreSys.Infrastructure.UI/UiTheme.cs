@@ -125,6 +125,17 @@ internal static class UiIcons
         g.DrawRectangle(pen, 3, 3, 18, 18);
     });
 
+    public static Bitmap GrossProfit(int size = 24) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.6f);
+        using var bar = new SolidBrush(Color.FromArgb(40, 140, 70));
+        g.FillRectangle(bar, 5, 14, 4, 6);
+        g.FillRectangle(bar, 11, 10, 4, 10);
+        g.FillRectangle(bar, 17, 5, 4, 15);
+        g.DrawLine(pen, 3, 20, 21, 20);
+        g.DrawLine(pen, 3, 4, 3, 20);
+    });
+
     public static Bitmap Checkout(int size = 22) => Draw(size, g =>
     {
         using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);

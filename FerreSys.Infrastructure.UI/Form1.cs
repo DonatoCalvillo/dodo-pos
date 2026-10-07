@@ -21,6 +21,7 @@ public partial class Form1 : Form
     private Button btnNewCart = null!;
     private Button btnCloseCart = null!;
     private ToolStripButton btnViewSales = null!;
+    private ToolStripButton btnGrossProfit = null!;
     private ToolStripButton btnCashCloseX = null!;
     private ToolStripButton btnCashCloseZ = null!;
     private ToolStripButton btnCashMovements = null!;
@@ -39,6 +40,7 @@ public partial class Form1 : Form
     private readonly SearchProductsUseCase _searchProductsUseCase;
     private readonly ProcessSaleUseCase _processSaleUseCase;
     private readonly GetDailyCashSummaryUseCase _getDailyCashSummaryUseCase;
+    private readonly GetGrossProfitSummaryUseCase _getGrossProfitSummaryUseCase;
     private readonly SaveOpeningCashUseCase _saveOpeningCashUseCase;
     private readonly CloseCashDayUseCase _closeCashDayUseCase;
     private readonly GetCashMovementsUseCase _getCashMovementsUseCase;
@@ -58,6 +60,7 @@ public partial class Form1 : Form
         _searchProductsUseCase = new SearchProductsUseCase(_productRepository);
         _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
         _getDailyCashSummaryUseCase = new GetDailyCashSummaryUseCase(_productRepository);
+        _getGrossProfitSummaryUseCase = new GetGrossProfitSummaryUseCase(_productRepository);
         _saveOpeningCashUseCase = new SaveOpeningCashUseCase(_productRepository);
         _closeCashDayUseCase = new CloseCashDayUseCase(_productRepository);
         _getCashMovementsUseCase = new GetCashMovementsUseCase(_productRepository);
@@ -129,12 +132,13 @@ public partial class Form1 : Form
 
         var mArchivo = new ToolStripMenuItem("&Archivo");
         var mVentas = new ToolStripMenuItem("Ver &Ventas...", null, (_, _) => OpenSales());
+        var mUtilidad = new ToolStripMenuItem("&Utilidad bruta / ganancia neta...", null, (_, _) => OpenGrossProfitReport());
         var mCorteX = new ToolStripMenuItem("Corte &X (estado de caja)...", null, (_, _) => OpenCashClose(CashCutMode.X));
         var mCorteZ = new ToolStripMenuItem("Corte &Z (cierre)...", null, (_, _) => OpenCashClose(CashCutMode.Z));
         var mMovimientos = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
         var mImportar = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
         var mSalir = new ToolStripMenuItem("&Salir", null, (_, _) => Close());
-        mArchivo.DropDownItems.AddRange([mVentas, mCorteX, mCorteZ, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
+        mArchivo.DropDownItems.AddRange([mVentas, mUtilidad, mCorteX, mCorteZ, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
 
         var mProductos = new ToolStripMenuItem("&Productos");
         mProductos.DropDownItems.Add(new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click));
@@ -167,6 +171,9 @@ public partial class Form1 : Form
         btnViewSales = CreateToolItem("Ver Ventas", UiIcons.Sales());
         btnViewSales.Click += (_, _) => OpenSales();
 
+        btnGrossProfit = CreateToolItem("Utilidad", UiIcons.GrossProfit());
+        btnGrossProfit.Click += (_, _) => OpenGrossProfitReport();
+
         btnCashCloseX = CreateToolItem("Corte X", UiIcons.CashClose());
         btnCashCloseX.Click += (_, _) => OpenCashClose(CashCutMode.X);
 
@@ -190,6 +197,7 @@ public partial class Form1 : Form
 
         strip.Items.AddRange([
             btnViewSales,
+            btnGrossProfit,
             btnCashCloseX,
             btnCashCloseZ,
             btnCashMovements,
@@ -603,6 +611,12 @@ public partial class Form1 : Form
     private void OpenSales()
     {
         using var f = new SalesHistoryForm(_productRepository);
+        f.ShowDialog();
+    }
+
+    private void OpenGrossProfitReport()
+    {
+        using var f = new GrossProfitReportForm(_getGrossProfitSummaryUseCase);
         f.ShowDialog();
     }
 

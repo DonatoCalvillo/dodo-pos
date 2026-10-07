@@ -235,4 +235,22 @@ internal static class SectionHelpText
         "• Cobrar (F5): abre el pago de la venta activa.\n" +
         "• Vaciar: quita todos los renglones del carrito actual.\n" +
         "• Nueva / cerrar venta: administra pestañas de carrito.";
+
+    public const string GrossProfitReport =
+        "Consulta el margen real de las ventas en un rango de fechas.\n\n" +
+        "Utilidad por renglón =\n" +
+        "(Precio de venta − Costo al momento de la venta) × Cantidad.\n\n" +
+        "El costo se congela en el ticket; no usa el costo actual del catálogo.\n" +
+        "No descuenta gastos ni movimientos de caja.";
+
+    public const string GrossProfitSalesCost =
+        "Totales del rango seleccionado.\n\n" +
+        "• Total vendido: suma de cantidad × precio de venta.\n" +
+        "• Costo total vendido: suma de cantidad × costo guardado en el ticket.";
+
+    public const string GrossProfitNet =
+        "Ganancia neta real sobre la mercancía vendida.\n\n" +
+        "• Ganancia neta = Total vendido − Costo total vendido.\n" +
+        "• Margen % = Ganancia neta ÷ Total vendido × 100.\n\n" +
+        "Si no hay ventas en el rango, el margen es 0 %.";
 }
