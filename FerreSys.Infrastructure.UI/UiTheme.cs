@@ -73,6 +73,58 @@ internal static class UiIcons
         g.DrawLine(pen, 15, 5, 5, 15);
     });
 
+    public static Bitmap NewSale(int size = 20) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.4f);
+        using var back = new SolidBrush(Color.FromArgb(200, 210, 225));
+        using var front = new SolidBrush(Color.FromArgb(70, 130, 200));
+        g.FillRectangle(back, 3, 5, 10, 11);
+        g.DrawRectangle(pen, 3, 5, 10, 11);
+        g.FillRectangle(front, 7, 3, 10, 11);
+        g.DrawRectangle(pen, 7, 3, 10, 11);
+        using var plus = new Pen(Color.FromArgb(0, 120, 70), 2f);
+        g.DrawLine(plus, 16, 14, 16, 19);
+        g.DrawLine(plus, 13.5f, 16.5f, 18.5f, 16.5f);
+    });
+
+    public static Bitmap CloseSale(int size = 20) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.4f);
+        using var tab = new SolidBrush(Color.FromArgb(180, 190, 205));
+        g.FillRectangle(tab, 3, 4, 11, 12);
+        g.DrawRectangle(pen, 3, 4, 11, 12);
+        g.DrawLine(pen, 3, 8, 14, 8);
+        using var x = new Pen(Color.FromArgb(160, 50, 50), 2f);
+        g.DrawLine(x, 12, 12, 18, 18);
+        g.DrawLine(x, 18, 12, 12, 18);
+    });
+
+    public static Bitmap CashClose(int size = 24) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.6f);
+        using var body = new SolidBrush(Color.FromArgb(70, 140, 90));
+        g.FillRectangle(body, 3, 9, 18, 11);
+        g.DrawRectangle(pen, 3, 9, 18, 11);
+        g.DrawLine(pen, 3, 14, 21, 14);
+        using var coin = new SolidBrush(Color.FromArgb(220, 180, 60));
+        g.FillEllipse(coin, 8, 2, 8, 8);
+        g.DrawEllipse(pen, 8, 2, 8, 8);
+    });
+
+    public static Bitmap CashMovements(int size = 24) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);
+        using var inArrow = new Pen(Color.FromArgb(40, 140, 70), 2.2f);
+        using var outArrow = new Pen(Color.FromArgb(170, 60, 50), 2.2f);
+        g.DrawLine(inArrow, 4, 7, 11, 7);
+        g.DrawLine(inArrow, 8, 4, 11, 7);
+        g.DrawLine(inArrow, 8, 10, 11, 7);
+        g.DrawLine(outArrow, 13, 17, 20, 17);
+        g.DrawLine(outArrow, 17, 14, 20, 17);
+        g.DrawLine(outArrow, 17, 20, 20, 17);
+        g.DrawRectangle(pen, 3, 3, 18, 18);
+    });
+
     public static Bitmap Checkout(int size = 22) => Draw(size, g =>
     {
         using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);

@@ -33,7 +33,7 @@ public static class TicketFormatter
                 ? item.ProductName[..15] + "..." 
                 : item.ProductName;
 
-            string leftSide = $"{item.Quantity}x {displayName}";
+            string leftSide = $"{item.Unit.FormatQuantity(item.Quantity)} {displayName}";
             string rightSide = $"${item.Subtotal:N2}";
 
             sb.AppendLine(FormatLine(leftSide, rightSide));
@@ -42,9 +42,29 @@ public static class TicketFormatter
         sb.AppendLine(new string('-', TicketWidth));
 
         // 5. Total de la Venta
-        string totalLabel = "TOTAL:";
-        string totalValue = $"${sale.Total:N2}";
-        sb.AppendLine(FormatLine(totalLabel, totalValue));
+        sb.AppendLine(FormatLine("TOTAL:", $"${sale.Total:N2}"));
+
+        if (sale.PaymentMethod == "EFECTIVO")
+        {
+            sb.AppendLine(FormatLine("RECIBIDO:", $"${sale.AmountReceived:N2}"));
+            sb.AppendLine(FormatLine("CAMBIO:", $"${sale.Change:N2}"));
+        }
+        else if (sale.PaymentMethod == "MIXTO")
+        {
+            sb.AppendLine(FormatLine("EFECTIVO:", $"${sale.CashAmount:N2}"));
+            sb.AppendLine(FormatLine("TARJETA:", $"${sale.CardAmount:N2}"));
+            sb.AppendLine(FormatLine("RECIBIDO:", $"${sale.AmountReceived:N2}"));
+            sb.AppendLine(FormatLine("CAMBIO:", $"${sale.Change:N2}"));
+            if (!string.IsNullOrWhiteSpace(sale.CardReference))
+                sb.AppendLine(FormatLine("REF:", sale.CardReference));
+        }
+        else
+        {
+            sb.AppendLine(FormatLine("PAGO:", "TARJETA"));
+            if (!string.IsNullOrWhiteSpace(sale.CardReference))
+                sb.AppendLine(FormatLine("REF:", sale.CardReference));
+        }
+
         sb.AppendLine(new string('=', TicketWidth));
 
         // 6. Pie de Ticket

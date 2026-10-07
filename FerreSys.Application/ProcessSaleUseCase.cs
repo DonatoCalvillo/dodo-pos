@@ -5,7 +5,7 @@ namespace FerreSys.Application;
 public class SaleItemDto
 {
     public string Barcode { get; set; } = string.Empty;
-    public int Quantity { get; set; }
+    public decimal Quantity { get; set; }
 }
 
 public class ProcessSaleUseCase
@@ -17,12 +17,17 @@ public class ProcessSaleUseCase
         _productRepository = productRepository;
     }
 
-    public void Execute(List<SaleItemDto> items, string paymentMethod, string cardReference)
+    public void Execute(
+        List<SaleItemDto> items,
+        string paymentMethod,
+        string cardReference,
+        decimal amountReceived = 0,
+        decimal cardAmount = 0)
     {
         if (items == null || items.Count == 0)
             throw new ArgumentException("No hay productos en el carrito para realizar la venta.");
 
-        var productsToUpdate = new List<(Product Product, int Quantity)>();
+        var productsToUpdate = new List<(Product Product, decimal Quantity)>();
         var saleItems = new List<SaleItem>();
 
         foreach (var item in items)
@@ -39,7 +44,9 @@ public class ProcessSaleUseCase
                 product.Barcode,
                 product.Name,
                 item.Quantity,
-                product.RetailPrice
+                product.RetailPrice,
+                product.CostPrice,
+                product.Unit
             ));
         }
 
@@ -48,8 +55,14 @@ public class ProcessSaleUseCase
             _productRepository.Update(product);
         }
 
-        // PASO CORREGIDO: Pasamos el método de pago y referencia a la entidad del dominio
-        var sale = new Sale(Guid.NewGuid(), DateTime.Now, saleItems, paymentMethod, cardReference);
+        var sale = new Sale(
+            Guid.NewGuid(),
+            DateTime.Now,
+            saleItems,
+            paymentMethod,
+            cardReference,
+            amountReceived,
+            cardAmount);
         _productRepository.SaveSale(sale);
     }
 }

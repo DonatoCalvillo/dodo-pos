@@ -6,7 +6,6 @@ public class AddProductUseCase
 {
     private readonly IProductRepository _productRepository;
     private readonly ISubscriptionService _subscriptionService;
-    private const int FreeTierLimit = 200;
 
     // Inyectamos el repositorio a través del constructor (Inversión de Dependencias)
     public AddProductUseCase(IProductRepository productRepository, ISubscriptionService subscriptionService)
@@ -31,12 +30,11 @@ public class AddProductUseCase
         {
             // Si es gratis, contamos los productos actuales
             int currentTotal = _productRepository.GetTotalCount();
-            if (currentTotal >= FreeTierLimit)
+            if (currentTotal >= FreeTierLimits.ProductLimit)
             {
                 throw new InvalidOperationException(
-                    "Has alcanzado el límite de 200 productos de la versión gratuita.\n\n" +
-                    "Para registrar más productos de forma ilimitada y activar respaldos automáticos en la nube, " +
-                    "adquiere la Licencia Premium de FerreSys."
+                    $"Has alcanzado el límite de {FreeTierLimits.ProductLimit} productos de la versión gratuita.\n\n" +
+                    FreeTierLimits.PremiumUpsell
                 );
             }
         }

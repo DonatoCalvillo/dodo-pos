@@ -7,17 +7,17 @@ public partial class SalesHistoryForm : Form
     private readonly IProductRepository _productRepository;
 
     // Controles de Filtros Avanzados
-    private TextBox txtSearchId;
-    private DateTimePicker dtpStart;
-    private DateTimePicker dtpEnd;
-    private Button btnToday;
-    private Button btnYesterday;
-    private Button btnThisWeek;
+    private TextBox txtSearchId = null!;
+    private DateTimePicker dtpStart = null!;
+    private DateTimePicker dtpEnd = null!;
+    private Button btnToday = null!;
+    private Button btnYesterday = null!;
+    private Button btnThisWeek = null!;
 
     // Tablas y etiquetas
-    private DataGridView dgvSales;
-    private DataGridView dgvDetails;
-    private Label lblRevenue;
+    private DataGridView dgvSales = null!;
+    private DataGridView dgvDetails = null!;
+    private Label lblRevenue = null!;
 
     public SalesHistoryForm(IProductRepository productRepository)
     {
@@ -78,10 +78,10 @@ public partial class SalesHistoryForm : Form
         dgvSales.Columns.Add("Date", "Fecha y Hora");
         dgvSales.Columns.Add("Total", "Total Cobrado");
 
-        dgvSales.Columns["FullId"].Visible = false; // Oculto para la lógica interna
-        dgvSales.Columns["ShortId"].FillWeight = 65; // Proporciones de tamaño de columna
-        dgvSales.Columns["Date"].FillWeight = 110;
-        dgvSales.Columns["Total"].FillWeight = 75;
+        Column(dgvSales, "FullId").Visible = false; // Oculto para la lógica interna
+        Column(dgvSales, "ShortId").FillWeight = 65; // Proporciones de tamaño de columna
+        Column(dgvSales, "Date").FillWeight = 110;
+        Column(dgvSales, "Total").FillWeight = 75;
         dgvSales.SelectionChanged += DgvSales_SelectionChanged;
 
         // Tabla Derecha: Detalles del Ticket
@@ -92,8 +92,8 @@ public partial class SalesHistoryForm : Form
         dgvDetails.Columns.Add("Qty", "Cant.");
         dgvDetails.Columns.Add("Price", "Precio U.");
         dgvDetails.Columns.Add("Sub", "Subtotal");
-        dgvDetails.Columns["Qty"].FillWeight = 45;
-        dgvDetails.Columns["Sub"].FillWeight = 70;
+        Column(dgvDetails, "Qty").FillWeight = 45;
+        Column(dgvDetails, "Sub").FillWeight = 70;
 
         // Reporte final de ingresos acumulados
         lblRevenue = new Label { Location = new Point(20, 490), Size = new Size(940, 40), Font = new Font("Arial", 14, FontStyle.Bold), ForeColor = Color.DarkGreen, TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Gainsboro };
@@ -145,7 +145,11 @@ public partial class SalesHistoryForm : Form
         if (dgvSales.CurrentRow != null)
         {
             // Recuperamos el Guid completo guardado de forma segura en la columna 0
-            Guid saleId = (Guid)dgvSales.CurrentRow.Cells[0].Value;
+            if (dgvSales.CurrentRow.Cells[0].Value is not Guid saleId)
+            {
+                return;
+            }
+
             var details = _productRepository.GetSaleDetails(saleId);
 
             foreach (var item in details)
@@ -153,11 +157,14 @@ public partial class SalesHistoryForm : Form
                 dgvDetails.Rows.Add(
                     item.Barcode,
                     item.ProductName,
-                    item.Quantity,
+                    item.Unit.FormatQuantity(item.Quantity),
                     $"${item.PriceSold:N2}",
                     $"${item.Subtotal:N2}"
                 );
             }
         }
     }
+
+    private static DataGridViewColumn Column(DataGridView grid, string name) =>
+        grid.Columns[name] ?? throw new InvalidOperationException($"No existe la columna '{name}'.");
 }

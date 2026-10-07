@@ -29,4 +29,18 @@ public interface IProductRepository
     void SaveBulk(List<Product> products);
 
     List<Sale> GetSalesHistoryAdvanced(DateTime startDate, DateTime endDate, string ticketIdFilter);
+
+    CashClose? GetCashClose(DateTime businessDate);
+
+    void SaveOpeningCash(DateTime businessDate, decimal openingCash);
+
+    void CloseCashDay(DateTime businessDate, decimal countedCash);
+
+    PaymentDayTotals GetPaymentTotals(DateTime businessDate);
+
+    void SaveCashMovement(CashMovement movement);
+
+    List<CashMovement> GetCashMovements(DateTime businessDate);
+
+    CashMovementDayTotals GetCashMovementTotals(DateTime businessDate);
 }

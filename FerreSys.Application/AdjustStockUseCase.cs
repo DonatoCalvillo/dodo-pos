@@ -11,7 +11,7 @@ public class AdjustStockUseCase
         _productRepository = productRepository;
     }
 
-    public void Execute(string barcode, int newStock)
+    public void Execute(string barcode, decimal newStock)
     {
         if (newStock < 0)
         {
@@ -32,7 +32,8 @@ public class AdjustStockUseCase
             product.Name,
             product.CostPrice,
             product.RetailPrice,
-            newStock // Asignamos el nuevo stock auditado
+            newStock,
+            product.Unit
         );
 
         // 3. Mandamos a actualizar mediante el repositorio

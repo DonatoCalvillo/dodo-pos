@@ -8,8 +8,8 @@ public partial class AdjustStockForm : Form
     private readonly AdjustStockUseCase _adjustStockUseCase;
     private readonly Product _product;
 
-    private NumericUpDown numNewStock;
-    private Button btnSave;
+    private NumericUpDown numNewStock = null!;
+    private Button btnSave = null!;
 
     public AdjustStockForm(AdjustStockUseCase adjustStockUseCase, Product product)
     {
@@ -21,35 +21,46 @@ public partial class AdjustStockForm : Form
     private void InitializeComponent()
     {
         this.Text = "Auditoría de Inventario - FerreSys";
-        this.Size = new Size(380, 240);
+        this.Size = new Size(400, 260);
         this.FormBorderStyle = FormBorderStyle.FixedDialog;
         this.MaximizeBox = false;
         this.StartPosition = FormStartPosition.CenterParent;
 
+        string stockLabel = _product.Unit.FormatQuantity(_product.Stock);
+
         // Información del producto en formato de etiquetas fijas
         var lblProductInfo = new Label
         {
-            Text = $"Producto: {_product.Name}\nCódigo: {_product.Barcode}\nStock Actual en Sistema: {_product.Stock}",
+            Text = $"Producto: {_product.Name}\nCódigo: {_product.Barcode}\nUnidad: {_product.Unit.DisplayName()}\nStock Actual: {stockLabel}",
             Location = new Point(25, 20),
-            Size = new Size(310, 60),
+            Size = new Size(340, 75),
             Font = new Font("Arial", 9, FontStyle.Bold)
         };
 
-        var lblNewStock = new Label { Text = "Cantidad Real Física:", Location = new Point(25, 100), Size = new Size(140, 20), Font = new Font("Arial", 10) };
+        var lblNewStock = new Label
+        {
+            Text = $"Cantidad Real ({_product.Unit.DisplaySuffix()}):",
+            Location = new Point(25, 110),
+            Size = new Size(160, 20),
+            Font = new Font("Arial", 10)
+        };
 
+        int places = _product.Unit.MaxDecimalPlaces();
         numNewStock = new NumericUpDown
         {
-            Location = new Point(180, 98),
+            Location = new Point(195, 108),
             Size = new Size(150, 25),
-            Maximum = 10000,
-            Value = _product.Stock // Por defecto muestra lo que hay para facilitar correcciones rápidas
+            Maximum = 999999,
+            DecimalPlaces = places,
+            Increment = places > 0 ? 0.001m : 1m,
+            Value = Math.Min(999999, _product.Stock)
         };
 
         btnSave = new Button
         {
             Text = "Confirmar Ajuste (Auditoría)",
-            Location = new Point(25, 145),
-            Size = new Size(305, 38),
+            Location = new Point(25, 160),
+            Size = new Size(320, 38),
             BackColor = Color.LightCoral, // Color distintivo de acción administrativa
             Font = new Font("Arial", 10, FontStyle.Bold)
         };
@@ -62,11 +73,13 @@ public partial class AdjustStockForm : Form
     {
         try
         {
-            int finalStock = (int)numNewStock.Value;
+            decimal finalStock = numNewStock.Value;
+            string fromLabel = _product.Unit.FormatQuantity(_product.Stock);
+            string toLabel = _product.Unit.FormatQuantity(finalStock);
 
             // Confirmación de seguridad antes de alterar registros
             var confirm = MessageBox.Show(
-                $"¿Seguro que deseas cambiar el stock de '{_product.Name}' de {_product.Stock} unidades a {finalStock} unidades?",
+                $"¿Seguro que deseas cambiar el stock de '{_product.Name}' de {fromLabel} a {toLabel}?",
                 "Confirmar Movimiento de Auditoría",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question

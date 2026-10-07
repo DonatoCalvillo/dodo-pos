@@ -6,19 +6,30 @@ namespace FerreSys.Infrastructure.UI;
 
 public partial class Form1 : Form
 {
-    private TextBox txtBuscador;
-    private ToolStripButton btnOpenAddProduct;
-    private DataGridView dgvSearch;
-    private DataGridView dgvCart;
-    private Label lblTotal;
-    private Label lblCartSummary;
-    private ToolStripStatusLabel lblStatus;
-    private Button btnCheckout;
-    private Button btnPlus;
-    private Button btnMinus;
-    private Button btnClearCart;
-    private ToolStripButton btnViewSales;
-    private ToolStripButton btnImportExcel;
+    private TextBox txtBuscador = null!;
+    private ToolStripButton btnOpenAddProduct = null!;
+    private DataGridView dgvSearch = null!;
+    private DataGridView dgvCart = null!;
+    private TabControl tabsCarts = null!;
+    private Label lblTotal = null!;
+    private Label lblCartSummary = null!;
+    private ToolStripStatusLabel lblStatus = null!;
+    private Button btnCheckout = null!;
+    private Button btnPlus = null!;
+    private Button btnMinus = null!;
+    private Button btnClearCart = null!;
+    private Button btnNewCart = null!;
+    private Button btnCloseCart = null!;
+    private ToolStripButton btnViewSales = null!;
+    private ToolStripButton btnCashClose = null!;
+    private ToolStripButton btnCashMovements = null!;
+    private ToolStripButton btnImportExcel = null!;
+
+    private readonly List<CartSession> _cartSessions = [];
+    private int _activeSessionIndex;
+    private int _nextCartNumber = 1;
+    private bool _suppressTabEvents;
+    private bool _openingCashPromptShown;
 
     private readonly SqliteDbContext _dbContext;
     private readonly SqliteProductRepository _productRepository;
@@ -26,8 +37,13 @@ public partial class Form1 : Form
     private readonly AddProductUseCase _addProductUseCase;
     private readonly SearchProductsUseCase _searchProductsUseCase;
     private readonly ProcessSaleUseCase _processSaleUseCase;
+    private readonly GetDailyCashSummaryUseCase _getDailyCashSummaryUseCase;
+    private readonly SaveOpeningCashUseCase _saveOpeningCashUseCase;
+    private readonly CloseCashDayUseCase _closeCashDayUseCase;
+    private readonly GetCashMovementsUseCase _getCashMovementsUseCase;
+    private readonly RegisterCashMovementUseCase _registerCashMovementUseCase;
     private readonly UpdateProductUseCase _updateProductUseCase;
-    private ContextMenuStrip cmsSearchMenu;
+    private ContextMenuStrip cmsSearchMenu = null!;
     private readonly ImportProductsUseCase _importProductsUseCase;
     private readonly AdjustStockUseCase _adjustStockUseCase;
     private decimal _saleTotal = 0;
@@ -40,6 +56,14 @@ public partial class Form1 : Form
         _addProductUseCase = new AddProductUseCase(_productRepository, _subscriptionService);
         _searchProductsUseCase = new SearchProductsUseCase(_productRepository);
         _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
+        _getDailyCashSummaryUseCase = new GetDailyCashSummaryUseCase(_productRepository);
+        _saveOpeningCashUseCase = new SaveOpeningCashUseCase(_productRepository);
+        _closeCashDayUseCase = new CloseCashDayUseCase(_productRepository);
+        _getCashMovementsUseCase = new GetCashMovementsUseCase(_productRepository);
+        _registerCashMovementUseCase = new RegisterCashMovementUseCase(_productRepository);
+        _updateProductUseCase = new UpdateProductUseCase(_productRepository);
+        _importProductsUseCase = new ImportProductsUseCase(_productRepository, _subscriptionService);
+        _adjustStockUseCase = new AdjustStockUseCase(_productRepository);
 
         // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
         var version = typeof(Program).Assembly.GetName().Version;
@@ -55,6 +79,8 @@ public partial class Form1 : Form
         // Mantenemos activo el KeyPreview para que escuche el teclado de forma global
         this.KeyPreview = true;
         this.KeyDown += Form1_KeyDown;
+        this.FormClosing += Form1_FormClosing;
+        this.Shown += Form1_Shown;
 
         InicializarComponentes();
     }
@@ -102,9 +128,11 @@ public partial class Form1 : Form
 
         var mArchivo = new ToolStripMenuItem("&Archivo");
         var mVentas = new ToolStripMenuItem("Ver &Ventas...", null, (_, _) => OpenSales());
+        var mCorte = new ToolStripMenuItem("&Corte de caja...", null, (_, _) => OpenCashClose());
+        var mMovimientos = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
         var mImportar = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
         var mSalir = new ToolStripMenuItem("&Salir", null, (_, _) => Close());
-        mArchivo.DropDownItems.AddRange([mVentas, mImportar, new ToolStripSeparator(), mSalir]);
+        mArchivo.DropDownItems.AddRange([mVentas, mCorte, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
 
         var mProductos = new ToolStripMenuItem("&Productos");
         mProductos.DropDownItems.Add(new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click));
@@ -112,6 +140,10 @@ public partial class Form1 : Form
         var mVenta = new ToolStripMenuItem("&Venta");
         mVenta.DropDownItems.Add(new ToolStripMenuItem("&Cobrar (F5)", null, BtnCheckout_Click));
         mVenta.DropDownItems.Add(new ToolStripMenuItem("&Vaciar carrito", null, BtnClearCart_Click));
+        mVenta.DropDownItems.Add(new ToolStripSeparator());
+        mVenta.DropDownItems.Add(new ToolStripMenuItem("&Siguiente carrito (F6)", null, (_, _) => CycleToNextCart()));
+        mVenta.DropDownItems.Add(new ToolStripMenuItem("&Nueva venta (F7)", null, (_, _) => CreateNewCartSession()));
+        mVenta.DropDownItems.Add(new ToolStripMenuItem("Cerrar venta actual", null, (_, _) => CloseActiveCartSession()));
 
         menu.Items.AddRange([mArchivo, mProductos, mVenta]);
         return menu;
@@ -133,6 +165,12 @@ public partial class Form1 : Form
         btnViewSales = CreateToolItem("Ver Ventas", UiIcons.Sales());
         btnViewSales.Click += (_, _) => OpenSales();
 
+        btnCashClose = CreateToolItem("Corte de caja", UiIcons.CashClose());
+        btnCashClose.Click += (_, _) => OpenCashClose();
+
+        btnCashMovements = CreateToolItem("Movimientos", UiIcons.CashMovements());
+        btnCashMovements.Click += (_, _) => OpenCashMovements();
+
         btnImportExcel = CreateToolItem("Importar CSV", UiIcons.Import());
         btnImportExcel.Click += BtnImportExcel_Click;
 
@@ -147,6 +185,8 @@ public partial class Form1 : Form
 
         strip.Items.AddRange([
             btnViewSales,
+            btnCashClose,
+            btnCashMovements,
             btnImportExcel,
             btnOpenAddProduct,
             new ToolStripSeparator(),
@@ -182,8 +222,7 @@ public partial class Form1 : Form
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
 
-        var gbSearch = CreateGroupBox("Búsqueda de producto");
-        gbSearch.Margin = new Padding(0, 0, 6, 0);
+        var gbSearch = UiHelp.CreateGroupBox("Búsqueda de producto", SectionHelpText.Search, new Padding(0, 0, 6, 0));
 
         txtBuscador = new TextBox
         {
@@ -199,8 +238,7 @@ public partial class Form1 : Form
         searchPad.Controls.Add(txtBuscador);
         gbSearch.Controls.Add(searchPad);
 
-        var gbHints = CreateGroupBox("Indicaciones");
-        gbHints.Margin = new Padding(6, 0, 0, 0);
+        var gbHints = UiHelp.CreateGroupBox("Indicaciones", margin: new Padding(6, 0, 0, 0));
 
         var lblHints = new Label
         {
@@ -244,8 +282,7 @@ public partial class Form1 : Form
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
 
-        var gbResults = CreateGroupBox("Resultados del catálogo");
-        gbResults.Margin = new Padding(0, 0, 6, 0);
+        var gbResults = UiHelp.CreateGroupBox("Resultados del catálogo", SectionHelpText.CatalogResults, new Padding(0, 0, 6, 0));
 
         dgvSearch = CreateGrid();
         dgvSearch.Columns.Add("Barcode", "Código");
@@ -258,8 +295,7 @@ public partial class Form1 : Form
         resultsPad.Controls.Add(dgvSearch);
         gbResults.Controls.Add(resultsPad);
 
-        var gbSummary = CreateGroupBox("Resumen de venta");
-        gbSummary.Margin = new Padding(6, 0, 0, 0);
+        var gbSummary = UiHelp.CreateGroupBox("Resumen de venta", SectionHelpText.SaleSummary, new Padding(6, 0, 0, 0));
 
         var summaryStack = new TableLayoutPanel
         {
@@ -326,8 +362,33 @@ public partial class Form1 : Form
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
 
-        var gbCart = CreateGroupBox("Carrito de compra actual");
-        gbCart.Margin = new Padding(0, 0, 6, 0);
+        var gbCart = UiHelp.CreateGroupBox("Carrito de compra actual", SectionHelpText.Cart, new Padding(0, 0, 6, 0));
+
+        var cartLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
+        };
+        cartLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        cartLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        tabsCarts = new TabControl
+        {
+            Dock = DockStyle.Fill,
+            Font = UiTheme.Ui,
+            Appearance = TabAppearance.Normal,
+            SizeMode = TabSizeMode.Normal,
+            Padding = new Point(12, 4)
+        };
+        tabsCarts.SelectedIndexChanged += TabsCarts_SelectedIndexChanged;
+
+        var tabsMenu = new ContextMenuStrip { Font = UiTheme.Ui };
+        tabsMenu.Items.Add("Cerrar venta", null, (_, _) => CloseActiveCartSession());
+        tabsMenu.Items.Add("Nueva venta (F7)", null, (_, _) => CreateNewCartSession());
+        tabsCarts.ContextMenuStrip = tabsMenu;
 
         dgvCart = CreateGrid();
         dgvCart.Columns.Add("Barcode", "Código");
@@ -338,23 +399,34 @@ public partial class Form1 : Form
 
         var cartPad = CreateContentPanel();
         cartPad.Controls.Add(dgvCart);
-        gbCart.Controls.Add(cartPad);
 
-        var gbActions = CreateGroupBox("Acciones");
-        gbActions.Margin = new Padding(6, 0, 0, 0);
+        cartLayout.Controls.Add(tabsCarts, 0, 0);
+        cartLayout.Controls.Add(cartPad, 0, 1);
+        gbCart.Controls.Add(cartLayout);
 
+        EnsureInitialCartSession();
+
+        var gbActions = UiHelp.CreateGroupBox("Acciones", SectionHelpText.Actions, new Padding(6, 0, 0, 0));
+
+        // Secciones: línea del carrito | ventas en espera | cobrar (CTA)
         var actionsStack = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
-            Padding = new Padding(4, 12, 4, 4),
+            RowCount = 11,
+            Padding = new Padding(4, 8, 4, 4),
             BackColor = UiTheme.PanelBg
         };
+        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 22)); // header línea
         actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 10)); // separador
+        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 22)); // header espera
         actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
         actionsStack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 1));  // regla antes de CTA
         actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
 
         btnPlus = CreateActionButton("Añadir 1", UiIcons.Plus());
@@ -366,15 +438,27 @@ public partial class Form1 : Form
         btnClearCart = CreateActionButton("Vaciar carrito", UiIcons.Clear());
         btnClearCart.Click += BtnClearCart_Click;
 
+        btnNewCart = CreateActionButton("Nueva venta (F7)", UiIcons.NewSale());
+        btnNewCart.Click += (_, _) => CreateNewCartSession();
+
+        btnCloseCart = CreateActionButton("Cerrar venta", UiIcons.CloseSale());
+        btnCloseCart.Click += (_, _) => CloseActiveCartSession();
+
         btnCheckout = CreateActionButton("Cobrar venta (F5)", UiIcons.Checkout());
         btnCheckout.Font = UiTheme.UiBold;
         btnCheckout.Click += BtnCheckout_Click;
 
-        actionsStack.Controls.Add(btnPlus, 0, 0);
-        actionsStack.Controls.Add(btnMinus, 0, 1);
-        actionsStack.Controls.Add(btnClearCart, 0, 2);
-        actionsStack.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.PanelBg }, 0, 3);
-        actionsStack.Controls.Add(btnCheckout, 0, 4);
+        actionsStack.Controls.Add(CreateActionSectionLabel("Línea del carrito"), 0, 0);
+        actionsStack.Controls.Add(btnPlus, 0, 1);
+        actionsStack.Controls.Add(btnMinus, 0, 2);
+        actionsStack.Controls.Add(btnClearCart, 0, 3);
+        actionsStack.Controls.Add(CreateActionDivider(), 0, 4);
+        actionsStack.Controls.Add(CreateActionSectionLabel("Ventas en espera"), 0, 5);
+        actionsStack.Controls.Add(btnNewCart, 0, 6);
+        actionsStack.Controls.Add(btnCloseCart, 0, 7);
+        actionsStack.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.PanelBg }, 0, 8);
+        actionsStack.Controls.Add(CreateActionDivider(), 0, 9);
+        actionsStack.Controls.Add(btnCheckout, 0, 10);
 
         gbActions.Controls.Add(actionsStack);
 
@@ -412,19 +496,6 @@ public partial class Form1 : Form
         status.Items.Add(new ToolStripStatusLabel("FerreSys MVP") { BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched });
 
         return status;
-    }
-
-    private static GroupBox CreateGroupBox(string title)
-    {
-        return new GroupBox
-        {
-            Text = " " + title + " ",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.GroupFont,
-            ForeColor = UiTheme.GroupTitle,
-            BackColor = UiTheme.PanelBg,
-            Padding = new Padding(8)
-        };
     }
 
     private static Panel CreateContentPanel()
@@ -473,6 +544,37 @@ public partial class Form1 : Form
         return grid;
     }
 
+    private static Label CreateActionSectionLabel(string text)
+    {
+        return new Label
+        {
+            Text = text.ToUpperInvariant(),
+            Dock = DockStyle.Fill,
+            Font = UiTheme.UiBold,
+            ForeColor = UiTheme.GroupTitle,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(2, 0, 2, 0),
+            Padding = new Padding(2, 0, 0, 0)
+        };
+    }
+
+    private static Panel CreateActionDivider()
+    {
+        var wrap = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(2, 2, 2, 2),
+            BackColor = UiTheme.PanelBg
+        };
+        wrap.Controls.Add(new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 1,
+            BackColor = Color.FromArgb(190, 190, 190)
+        });
+        return wrap;
+    }
+
     private static Button CreateActionButton(string text, Image icon)
     {
         return new Button
@@ -496,6 +598,53 @@ public partial class Form1 : Form
     {
         using var f = new SalesHistoryForm(_productRepository);
         f.ShowDialog();
+    }
+
+    private void OpenCashClose()
+    {
+        using var f = new CashCloseForm(
+            _getDailyCashSummaryUseCase,
+            _saveOpeningCashUseCase,
+            _closeCashDayUseCase);
+        f.ShowDialog();
+    }
+
+    private void OpenCashMovements()
+    {
+        using var f = new CashMovementsForm(
+            _getCashMovementsUseCase,
+            _registerCashMovementUseCase,
+            _getDailyCashSummaryUseCase);
+        f.ShowDialog();
+    }
+
+    private void Form1_Shown(object? sender, EventArgs e)
+    {
+        if (_openingCashPromptShown)
+            return;
+
+        _openingCashPromptShown = true;
+        PromptOpeningCashIfNeeded();
+    }
+
+    private void PromptOpeningCashIfNeeded()
+    {
+        var today = DateTime.Today;
+        if (_productRepository.GetCashClose(today) != null)
+            return;
+
+        using var prompt = new OpeningCashPromptForm(_saveOpeningCashUseCase, today);
+        var result = prompt.ShowDialog(this);
+        if (result == DialogResult.OK)
+        {
+            lblStatus.Text = "Fondo inicial del día guardado.";
+            lblStatus.ForeColor = UiTheme.StatusOk;
+        }
+        else
+        {
+            lblStatus.Text = "Fondo del día no declarado. Puedes seguir cobrando o declararlo en Corte de caja.";
+            lblStatus.ForeColor = Color.DarkOrange;
+        }
     }
 
     private void SetupSearchContextMenu()
@@ -535,7 +684,7 @@ public partial class Form1 : Form
             List<Product> matches = _searchProductsUseCase.Execute(term);
             foreach (var p in matches)
             {
-                dgvSearch.Rows.Add(p.Barcode, p.Name, p.RetailPrice, p.Stock);
+                dgvSearch.Rows.Add(p.Barcode, p.Name, p.RetailPrice, p.Unit.FormatQuantity(p.Stock));
             }
             SetStatus($"Búsqueda: {matches.Count} resultado(s) para \"{term}\"");
         }
@@ -564,39 +713,248 @@ public partial class Form1 : Form
 
     private void AddToCart(DataGridViewRow row)
     {
-        string barcode = row.Cells["Barcode"].Value.ToString()!;
-        string name = row.Cells["Name"].Value.ToString()!;
+        string barcode = CellText(row, "Barcode");
+        string name = CellText(row, "Name");
         decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
+
+        var product = _productRepository.GetByBarcode(barcode);
+        if (product == null)
+        {
+            MessageBox.Show($"No se encontró el producto '{barcode}'.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        decimal qtyToAdd = 1m;
+        if (product.Unit.AllowsDecimals())
+        {
+            using var qtyForm = new BulkQuantityForm(product.Name, product.Unit, product.Stock);
+            if (qtyForm.ShowDialog(this) != DialogResult.OK)
+                return;
+            qtyToAdd = qtyForm.Quantity;
+        }
 
         foreach (DataGridViewRow cartRow in dgvCart.Rows)
         {
-            if (cartRow.Cells[0].Value.ToString() == barcode)
+            if (CellText(cartRow, 0) == barcode)
             {
-                int currentQty = Convert.ToInt32(cartRow.Cells[3].Value);
-                cartRow.Cells[3].Value = currentQty + 1;
-                cartRow.Cells[4].Value = (currentQty + 1) * price;
+                decimal currentQty = Convert.ToDecimal(cartRow.Cells["Qty"].Value);
+                decimal newQty = currentQty + qtyToAdd;
+                cartRow.Cells["Qty"].Value = FormatCartQty(newQty, product.Unit);
+                cartRow.Cells["Subtotal"].Value = newQty * price;
                 CalculateTotal();
-                SetStatus($"Actualizado en carrito: {name}");
+                SetStatus($"Actualizado en carrito: {name} ({product.Unit.FormatQuantity(newQty)})");
                 return;
             }
         }
 
-        dgvCart.Rows.Add(barcode, name, price, 1, price);
+        dgvCart.Rows.Add(barcode, name, price, FormatCartQty(qtyToAdd, product.Unit), qtyToAdd * price);
         CalculateTotal();
-        SetStatus($"Añadido al carrito: {name}");
+        SetStatus($"Añadido al carrito: {name} ({product.Unit.FormatQuantity(qtyToAdd)})");
+    }
+
+    private static string FormatCartQty(decimal qty, UnitOfMeasure unit) =>
+        unit.AllowsDecimals() ? qty.ToString("0.###") : ((int)qty).ToString();
+
+    private CartSession ActiveSession => _cartSessions[_activeSessionIndex];
+
+    private void EnsureInitialCartSession()
+    {
+        if (_cartSessions.Count > 0)
+            return;
+
+        var session = new CartSession { Label = $"Venta {_nextCartNumber++}" };
+        _cartSessions.Add(session);
+        _activeSessionIndex = 0;
+
+        _suppressTabEvents = true;
+        tabsCarts.TabPages.Clear();
+        tabsCarts.TabPages.Add(CreateTabPage(session));
+        tabsCarts.SelectedIndex = 0;
+        _suppressTabEvents = false;
+    }
+
+    private static TabPage CreateTabPage(CartSession session) =>
+        new(session.Label) { Tag = session.Id, ToolTipText = session.Label };
+
+    private List<CartLineSnapshot> CaptureCartFromGrid()
+    {
+        var lines = new List<CartLineSnapshot>();
+        foreach (DataGridViewRow row in dgvCart.Rows)
+        {
+            if (row.IsNewRow)
+                continue;
+
+            lines.Add(new CartLineSnapshot
+            {
+                Barcode = CellText(row, "Barcode"),
+                Name = CellText(row, "Name"),
+                Price = Convert.ToDecimal(row.Cells["Price"].Value),
+                Quantity = Convert.ToDecimal(row.Cells["Qty"].Value),
+                Subtotal = Convert.ToDecimal(row.Cells["Subtotal"].Value)
+            });
+        }
+
+        return lines;
+    }
+
+    private void SyncActiveSessionFromGrid()
+    {
+        if (_cartSessions.Count == 0)
+            return;
+
+        var session = ActiveSession;
+        session.Lines.Clear();
+        session.Lines.AddRange(CaptureCartFromGrid());
+    }
+
+    private void LoadCartIntoGrid(CartSession session)
+    {
+        dgvCart.Rows.Clear();
+        foreach (var line in session.Lines)
+        {
+            var product = _productRepository.GetByBarcode(line.Barcode);
+            UnitOfMeasure unit = product?.Unit ?? UnitOfMeasure.Pieza;
+            dgvCart.Rows.Add(
+                line.Barcode,
+                line.Name,
+                line.Price,
+                FormatCartQty(line.Quantity, unit),
+                line.Subtotal);
+        }
+
+        CalculateTotal();
+    }
+
+    private void SwitchToCartSession(int index)
+    {
+        if (index < 0 || index >= _cartSessions.Count)
+            return;
+
+        SyncActiveSessionFromGrid();
+        _activeSessionIndex = index;
+
+        _suppressTabEvents = true;
+        if (tabsCarts.SelectedIndex != index)
+            tabsCarts.SelectedIndex = index;
+        _suppressTabEvents = false;
+
+        LoadCartIntoGrid(ActiveSession);
+        SetStatus($"Carrito activo: {ActiveSession.Label}");
+        txtBuscador.Focus();
+    }
+
+    private void TabsCarts_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        if (_suppressTabEvents || tabsCarts.SelectedIndex < 0)
+            return;
+
+        if (tabsCarts.SelectedIndex == _activeSessionIndex)
+            return;
+
+        SwitchToCartSession(tabsCarts.SelectedIndex);
+    }
+
+    private void CreateNewCartSession()
+    {
+        if (_cartSessions.Count >= CartSession.MaxCartSessions)
+        {
+            MessageBox.Show(
+                $"Solo puedes tener hasta {CartSession.MaxCartSessions} ventas en espera al mismo tiempo.",
+                "Límite de carritos",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        SyncActiveSessionFromGrid();
+
+        var session = new CartSession { Label = $"Venta {_nextCartNumber++}" };
+        _cartSessions.Add(session);
+
+        _suppressTabEvents = true;
+        tabsCarts.TabPages.Add(CreateTabPage(session));
+        _activeSessionIndex = _cartSessions.Count - 1;
+        tabsCarts.SelectedIndex = _activeSessionIndex;
+        _suppressTabEvents = false;
+
+        LoadCartIntoGrid(session);
+        SetStatus($"Nueva venta: {session.Label}");
+        txtBuscador.Focus();
+    }
+
+    private void CycleToNextCart()
+    {
+        if (_cartSessions.Count <= 1)
+        {
+            SetStatus("Solo hay una venta activa");
+            return;
+        }
+
+        int next = (_activeSessionIndex + 1) % _cartSessions.Count;
+        SwitchToCartSession(next);
+    }
+
+    private void CloseActiveCartSession()
+    {
+        if (_cartSessions.Count <= 1)
+        {
+            MessageBox.Show(
+                "Debe quedar al menos una venta activa.",
+                "Cerrar venta",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        SyncActiveSessionFromGrid();
+        var session = ActiveSession;
+
+        if (session.Lines.Count > 0)
+        {
+            var confirm = MessageBox.Show(
+                $"¿Cerrar {session.Label} con {session.Lines.Count} línea(s) en el carrito?",
+                "Cerrar venta",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (confirm != DialogResult.Yes)
+                return;
+        }
+
+        int closingIndex = _activeSessionIndex;
+        _cartSessions.RemoveAt(closingIndex);
+
+        _suppressTabEvents = true;
+        tabsCarts.TabPages.RemoveAt(closingIndex);
+        int newIndex = Math.Min(closingIndex, _cartSessions.Count - 1);
+        _activeSessionIndex = newIndex;
+        tabsCarts.SelectedIndex = newIndex;
+        _suppressTabEvents = false;
+
+        LoadCartIntoGrid(ActiveSession);
+        SetStatus($"Cerrada. Activa: {ActiveSession.Label}");
+        txtBuscador.Focus();
+    }
+
+    private void ClearActiveCartSession()
+    {
+        dgvCart.Rows.Clear();
+        if (_cartSessions.Count > 0)
+            ActiveSession.Lines.Clear();
+        CalculateTotal();
     }
 
     private void CalculateTotal()
     {
         _saleTotal = 0;
-        int itemCount = 0;
+        decimal itemCount = 0;
         foreach (DataGridViewRow row in dgvCart.Rows)
         {
             _saleTotal += Convert.ToDecimal(row.Cells["Subtotal"].Value);
-            itemCount += Convert.ToInt32(row.Cells["Qty"].Value);
+            itemCount += Convert.ToDecimal(row.Cells["Qty"].Value);
         }
         lblTotal.Text = $"TOTAL\n${_saleTotal:N2}";
-        lblCartSummary.Text = $"Artículos: {itemCount}\nLíneas: {dgvCart.Rows.Count}";
+        string label = _cartSessions.Count > 0 ? ActiveSession.Label : "Venta";
+        lblCartSummary.Text = $"{label}\nCantidad: {itemCount:0.###}\nLíneas: {dgvCart.Rows.Count}";
     }
 
     private void BtnCheckout_Click(object? sender, EventArgs e)
@@ -619,47 +977,55 @@ public partial class Form1 : Form
             // Si da confirmar, extraemos los métodos seleccionados
             string method = checkoutForm.SelectedPaymentMethod;
             string reference = checkoutForm.CardReference;
+            decimal amountReceived = checkoutForm.AmountReceived;
+            decimal cardAmount = checkoutForm.CardAmount;
 
             var items = new List<SaleItemDto>();
             foreach (DataGridViewRow row in dgvCart.Rows)
             {
                 items.Add(new SaleItemDto
                 {
-                    Barcode = row.Cells[0].Value.ToString()!,
-                    Quantity = Convert.ToInt32(row.Cells[3].Value)
+                    Barcode = CellText(row, 0),
+                    Quantity = Convert.ToDecimal(row.Cells["Qty"].Value)
                 });
             }
 
             var saleItemsForTicket = new List<SaleItem>();
             foreach (DataGridViewRow row in dgvCart.Rows)
             {
-                string barcode = row.Cells[0].Value.ToString()!;
+                string barcode = CellText(row, 0);
                 var p = _productRepository.GetByBarcode(barcode)!;
-                int qty = Convert.ToInt32(row.Cells[3].Value);
-                saleItemsForTicket.Add(new SaleItem(p.Id, p.Barcode, p.Name, qty, p.RetailPrice));
+                decimal qty = Convert.ToDecimal(row.Cells["Qty"].Value);
+                saleItemsForTicket.Add(new SaleItem(p.Id, p.Barcode, p.Name, qty, p.RetailPrice, p.CostPrice, p.Unit));
             }
 
             // Pasamos el método y referencia también al objeto simulado del ticket impreso
-            var simulatedSale = new Sale(Guid.NewGuid(), DateTime.Now, saleItemsForTicket, method, reference);
+            var simulatedSale = new Sale(
+                Guid.NewGuid(),
+                DateTime.Now,
+                saleItemsForTicket,
+                method,
+                reference,
+                amountReceived,
+                cardAmount);
 
             // 2. Ejecutar caso de uso enviando los nuevos datos de control financiero
-            _processSaleUseCase.Execute(items, method, reference);
+            _processSaleUseCase.Execute(items, method, reference, amountReceived, cardAmount);
 
             // 3. Generación del ticket impreso
             string ticketText = TicketFormatter.GenerateTicketText(simulatedSale);
 
-            // Ajuste opcional: Si quieres que el ticket impreso diga el método de pago, 
-            // puedes concatenarlo aquí rápido al texto antes de mostrarlo:
-            ticketText += $"\nMÉTODO DE PAGO: {method}";
-            if (method == "TARJETA") ticketText += $"\nREF: {reference}";
-
             MessageBox.Show(ticketText, "Vista Previa del Ticket Impreso (58mm)", MessageBoxButtons.OK, MessageBoxIcon.None);
 
-            // Limpiar Carrito y resetear interfaz
-            dgvCart.Rows.Clear();
+            if (method == "EFECTIVO" || method == "MIXTO")
+                SetStatus($"Venta cobrada. Cambio: ${simulatedSale.Change:N2}");
+            else
+                SetStatus("Venta cobrada con tarjeta");
+
+            // Limpiar solo la sesión/tab activa; las demás ventas en espera se conservan
+            ClearActiveCartSession();
             txtBuscador.Clear();
             dgvSearch.Rows.Clear();
-            CalculateTotal();
             txtBuscador.Focus();
         }
         catch (Exception ex)
@@ -678,16 +1044,49 @@ public partial class Form1 : Form
         }
     }
 
+    private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
+    {
+        try
+        {
+            string backupFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                "FerreSys_Backups");
+            string fileName = $"ferresys_{DateTime.Now:yyyyMMdd_HHmmss}.db";
+            _dbContext.BackupTo(Path.Combine(backupFolder, fileName));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"No se pudo guardar el respaldo en Documentos\\FerreSys_Backups.\n\n{ex.Message}",
+                "Respaldo local",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+    }
+
     private void Form1_KeyDown(object? sender, KeyEventArgs e)
     {
-        // ATAJO 1: F5 para Cobrar la venta actual
         if (e.KeyCode == Keys.F5)
         {
             btnCheckout.PerformClick();
             e.Handled = true;
+            return;
         }
 
-        // ATAJO 2: Esc para salir del punto de venta de forma segura
+        if (e.KeyCode == Keys.F6)
+        {
+            CycleToNextCart();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.KeyCode == Keys.F7)
+        {
+            CreateNewCartSession();
+            e.Handled = true;
+            return;
+        }
+
         if (e.KeyCode == Keys.Escape)
         {
             var confirmExit = MessageBox.Show(
@@ -699,7 +1098,6 @@ public partial class Form1 : Form
 
             if (confirmExit == DialogResult.Yes)
             {
-                // CORRECCIÓN AQUÍ: Agregamos el prefijo completo del sistema de Windows Forms
                 System.Windows.Forms.Application.Exit();
             }
 
@@ -708,53 +1106,63 @@ public partial class Form1 : Form
     }
     private void BtnPlus_Click(object? sender, EventArgs e)
     {
-        if (dgvCart.CurrentRow != null)
-        {
-            var row = dgvCart.CurrentRow;
-            decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
-            int currentQty = Convert.ToInt32(row.Cells["Qty"].Value);
+        if (dgvCart.CurrentRow == null) return;
 
-            int newQty = currentQty + 1;
-            row.Cells["Qty"].Value = newQty;
-            row.Cells["Subtotal"].Value = newQty * price;
+        var row = dgvCart.CurrentRow;
+        string barcode = CellText(row, "Barcode");
+        var product = _productRepository.GetByBarcode(barcode);
+        UnitOfMeasure unit = product?.Unit ?? UnitOfMeasure.Pieza;
+        decimal step = unit.AllowsDecimals() ? 0.1m : 1m;
 
-            CalculateTotal();
-        }
+        decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
+        decimal currentQty = Convert.ToDecimal(row.Cells["Qty"].Value);
+        decimal newQty = currentQty + step;
+
+        row.Cells["Qty"].Value = FormatCartQty(newQty, unit);
+        row.Cells["Subtotal"].Value = newQty * price;
+        CalculateTotal();
     }
 
     private void BtnMinus_Click(object? sender, EventArgs e)
     {
-        if (dgvCart.CurrentRow != null)
+        if (dgvCart.CurrentRow == null) return;
+
+        var row = dgvCart.CurrentRow;
+        string barcode = CellText(row, "Barcode");
+        var product = _productRepository.GetByBarcode(barcode);
+        UnitOfMeasure unit = product?.Unit ?? UnitOfMeasure.Pieza;
+        decimal step = unit.AllowsDecimals() ? 0.1m : 1m;
+
+        decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
+        decimal currentQty = Convert.ToDecimal(row.Cells["Qty"].Value);
+        decimal newQty = currentQty - step;
+
+        if (newQty <= 0)
         {
-            var row = dgvCart.CurrentRow;
-            decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
-            int currentQty = Convert.ToInt32(row.Cells["Qty"].Value);
-
-            int newQty = currentQty - 1;
-
-            if (newQty <= 0)
-            {
-                dgvCart.Rows.Remove(row);
-            }
-            else
-            {
-                row.Cells["Qty"].Value = newQty;
-                row.Cells["Subtotal"].Value = newQty * price;
-            }
-
-            CalculateTotal();
+            dgvCart.Rows.Remove(row);
         }
+        else
+        {
+            row.Cells["Qty"].Value = FormatCartQty(newQty, unit);
+            row.Cells["Subtotal"].Value = newQty * price;
+        }
+
+        CalculateTotal();
     }
 
     private void BtnClearCart_Click(object? sender, EventArgs e)
     {
         if (dgvCart.Rows.Count > 0)
         {
-            var result = MessageBox.Show("¿Seguro que deseas vaciar por completo el carrito de compras?", "Confirmar", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            string label = _cartSessions.Count > 0 ? ActiveSession.Label : "el carrito";
+            var result = MessageBox.Show(
+                $"¿Seguro que deseas vaciar {label}?",
+                "Confirmar",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
             if (result == DialogResult.Yes)
             {
-                dgvCart.Rows.Clear();
-                CalculateTotal();
+                ClearActiveCartSession();
                 txtBuscador.Clear();
                 SetStatus("Carrito vaciado");
                 txtBuscador.Focus();
@@ -766,7 +1174,7 @@ public partial class Form1 : Form
     {
         if (dgvSearch.CurrentRow != null)
         {
-            string barcode = dgvSearch.CurrentRow.Cells["Barcode"].Value.ToString()!;
+            string barcode = CellText(dgvSearch.CurrentRow, "Barcode");
             var productToEdit = _productRepository.GetByBarcode(barcode);
 
             if (productToEdit != null)
@@ -788,18 +1196,49 @@ public partial class Form1 : Form
         {
             try
             {
-                List<Product> validatedProducts = _importProductsUseCase.Execute(openFileDialog.FileName);
-                _productRepository.SaveBulk(validatedProducts);
+                ImportProductsResult result = _importProductsUseCase.Execute(openFileDialog.FileName);
 
-                MessageBox.Show(
-                    $"¡Importación exitosa!\n\nSe han registrado {validatedProducts.Count} productos correctamente en la base de datos.",
-                    "Importador de Inventario",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information
-                );
+                if (result.Products.Count > 0)
+                    _productRepository.SaveBulk(result.Products);
 
-                TxtBuscador_TextChanged(this, EventArgs.Empty);
-                SetStatus($"Importados {validatedProducts.Count} productos");
+                if (result.SkippedByLimit > 0 && result.Products.Count == 0)
+                {
+                    MessageBox.Show(
+                        $"Has alcanzado el límite de {FreeTierLimits.ProductLimit} productos de la versión gratuita.\n\n" +
+                        $"{result.SkippedByLimit} filas del archivo no se importaron.\n\n" +
+                        FreeTierLimits.PremiumUpsell,
+                        "Límite de la versión gratuita",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
+                    SetStatus("Importación detenida: límite de productos alcanzado");
+                }
+                else if (result.SkippedByLimit > 0)
+                {
+                    MessageBox.Show(
+                        $"Se han registrado {result.Products.Count} productos.\n\n" +
+                        $"{result.SkippedByLimit} filas no se importaron porque superan el límite de {FreeTierLimits.ProductLimit} de la versión gratuita.\n\n" +
+                        FreeTierLimits.PremiumUpsell,
+                        "Importador de Inventario",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
+
+                    TxtBuscador_TextChanged(this, EventArgs.Empty);
+                    SetStatus($"Importados {result.Products.Count} productos; {result.SkippedByLimit} omitidos por el límite");
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"¡Importación exitosa!\n\nSe han registrado {result.Products.Count} productos correctamente en la base de datos.",
+                        "Importador de Inventario",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information
+                    );
+
+                    TxtBuscador_TextChanged(this, EventArgs.Empty);
+                    SetStatus($"Importados {result.Products.Count} productos");
+                }
             }
             catch (FormatException ex)
             {
@@ -820,7 +1259,7 @@ public partial class Form1 : Form
     {
         if (dgvSearch.CurrentRow != null)
         {
-            string barcode = dgvSearch.CurrentRow.Cells["Barcode"].Value.ToString()!;
+            string barcode = CellText(dgvSearch.CurrentRow, "Barcode");
             var product = _productRepository.GetByBarcode(barcode);
 
             if (product != null)
@@ -834,4 +1273,10 @@ public partial class Form1 : Form
             }
         }
     }
+
+    private static string CellText(DataGridViewRow row, string columnName) =>
+        row.Cells[columnName]?.Value?.ToString() ?? string.Empty;
+
+    private static string CellText(DataGridViewRow row, int columnIndex) =>
+        row.Cells[columnIndex].Value?.ToString() ?? string.Empty;
 }

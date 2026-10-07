@@ -19,17 +19,11 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         string query = @"
-            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock)
-            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock);";
+            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit)
+            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit);";
 
         using var command = new SqliteCommand(query, connection);
-        command.Parameters.AddWithValue("@Id", product.Id.ToString());
-        command.Parameters.AddWithValue("@Barcode", product.Barcode);
-        command.Parameters.AddWithValue("@Name", product.Name);
-        command.Parameters.AddWithValue("@CostPrice", product.CostPrice);
-        command.Parameters.AddWithValue("@RetailPrice", product.RetailPrice);
-        command.Parameters.AddWithValue("@Stock", product.Stock);
-
+        BindProductParameters(command, product);
         command.ExecuteNonQuery();
     }
 
@@ -38,22 +32,13 @@ public class SqliteProductRepository : IProductRepository
         using var connection = _context.CreateConnection();
         connection.Open();
 
-        string query = "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock FROM Products WHERE Barcode = @Barcode LIMIT 1;";
+        string query = "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit FROM Products WHERE Barcode = @Barcode LIMIT 1;";
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@Barcode", barcode);
 
         using var reader = command.ExecuteReader();
         if (reader.Read())
-        {
-            return new Product(
-                Guid.Parse(reader.GetString(0)),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetDecimal(3),
-                reader.GetDecimal(4),
-                reader.GetInt32(5)
-            );
-        }
+            return MapProduct(reader);
 
         return null;
     }
@@ -65,22 +50,13 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         // Filtro Fuzzy simple usando LIKE. El operador % busca coincidencias en cualquier parte del texto.
-        string query = "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock FROM Products WHERE Name LIKE @Term;";
+        string query = "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit FROM Products WHERE Name LIKE @Term;";
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@Term", $"%{term}%");
 
         using var reader = command.ExecuteReader();
         while (reader.Read())
-        {
-            products.Add(new Product(
-                Guid.Parse(reader.GetString(0)),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetDecimal(3),
-                reader.GetDecimal(4),
-                reader.GetInt32(5)
-            ));
-        }
+            products.Add(MapProduct(reader));
 
         return products;
     }
@@ -103,16 +79,11 @@ public class SqliteProductRepository : IProductRepository
 
         string query = @"
             UPDATE Products 
-            SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock 
+            SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock, Unit = @Unit 
             WHERE Id = @Id;";
 
         using var command = new SqliteCommand(query, connection);
-        command.Parameters.AddWithValue("@Id", product.Id.ToString());
-        command.Parameters.AddWithValue("@Name", product.Name);
-        command.Parameters.AddWithValue("@CostPrice", product.CostPrice);
-        command.Parameters.AddWithValue("@RetailPrice", product.RetailPrice);
-        command.Parameters.AddWithValue("@Stock", product.Stock);
-
+        BindProductParameters(command, product);
         command.ExecuteNonQuery();
     }
 
@@ -125,7 +96,7 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             // Insertar en cabecera de Ventas
-            string saleQuery = "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference) VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference);";
+            string saleQuery = "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount) VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount);";
             using (var cmdSale = new SqliteCommand(saleQuery, connection, transaction))
             {
                 cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
@@ -133,12 +104,14 @@ public class SqliteProductRepository : IProductRepository
                 cmdSale.Parameters.AddWithValue("@Total", sale.Total);
                 cmdSale.Parameters.AddWithValue("@PaymentMethod", sale.PaymentMethod);
                 cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
+                cmdSale.Parameters.AddWithValue("@AmountReceived", sale.AmountReceived);
+                cmdSale.Parameters.AddWithValue("@CardAmount", sale.CardAmount);
                 cmdSale.ExecuteNonQuery();
             }
             // Insertar los detalles
             string detailQuery = @"
-            INSERT INTO SaleDetails (SaleId, ProductId, Barcode, ProductName, Quantity, PriceSold) 
-            VALUES (@SaleId, @ProductId, @Barcode, @ProductName, @Quantity, @PriceSold);";
+            INSERT INTO SaleDetails (SaleId, ProductId, Barcode, ProductName, Quantity, PriceSold, UnitPrice, CostPrice, Unit)
+            VALUES (@SaleId, @ProductId, @Barcode, @ProductName, @Quantity, @PriceSold, @UnitPrice, @CostPrice, @Unit);";
 
             foreach (var item in sale.Items)
             {
@@ -148,7 +121,10 @@ public class SqliteProductRepository : IProductRepository
                 cmdDetail.Parameters.AddWithValue("@Barcode", item.Barcode);
                 cmdDetail.Parameters.AddWithValue("@ProductName", item.ProductName);
                 cmdDetail.Parameters.AddWithValue("@Quantity", item.Quantity);
-                cmdDetail.Parameters.AddWithValue("@PriceSold", item.PriceSold);
+                cmdDetail.Parameters.AddWithValue("@PriceSold", item.UnitPrice);
+                cmdDetail.Parameters.AddWithValue("@UnitPrice", item.UnitPrice);
+                cmdDetail.Parameters.AddWithValue("@CostPrice", item.CostPrice);
+                cmdDetail.Parameters.AddWithValue("@Unit", item.Unit.ToString());
                 cmdDetail.ExecuteNonQuery();
             }
 
@@ -167,7 +143,7 @@ public class SqliteProductRepository : IProductRepository
         using var connection = _context.CreateConnection();
         connection.Open();
 
-        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference FROM Sales ORDER BY CreatedAt DESC;";
+        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount FROM Sales ORDER BY CreatedAt DESC;";
         using var command = new SqliteCommand(query, connection);
         using var reader = command.ExecuteReader();
 
@@ -175,13 +151,7 @@ public class SqliteProductRepository : IProductRepository
         {
             // En un MVP, cargamos la cabecera de la venta. 
             // Inicializamos la lista de ítems vacía para no ralentizar la consulta principal.
-            sales.Add(new Sale(
-                Guid.Parse(reader.GetString(0)),
-                DateTime.Parse(reader.GetString(1)),
-                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) },
-                reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3),
-                reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
-            ));
+            sales.Add(MapSaleHeader(reader));
         }
         return sales;
     }
@@ -193,7 +163,7 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         // Filtro base: por defecto trae todo
-        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference FROM Sales";
+        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount FROM Sales";
 
         if (filterType == "TODAY")
         {
@@ -214,13 +184,7 @@ public class SqliteProductRepository : IProductRepository
         while (reader.Read())
         {
             // Cabecera con Total de BD; el desglose se carga al seleccionar el ticket (GetSaleDetails)
-            sales.Add(new Sale(
-                Guid.Parse(reader.GetString(0)),
-                DateTime.Parse(reader.GetString(1)),
-                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) },
-                reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3),
-                reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
-            ));
+            sales.Add(MapSaleHeader(reader));
         }
         return sales;
     }
@@ -231,7 +195,9 @@ public class SqliteProductRepository : IProductRepository
         using var connection = _context.CreateConnection();
         connection.Open();
 
-        string query = "SELECT ProductId, Barcode, ProductName, Quantity, PriceSold FROM SaleDetails WHERE SaleId = @SaleId;";
+        string query = @"
+            SELECT ProductId, Barcode, ProductName, Quantity, COALESCE(UnitPrice, PriceSold), CostPrice, Unit
+            FROM SaleDetails WHERE SaleId = @SaleId;";
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@SaleId", saleId.ToString());
 
@@ -242,8 +208,10 @@ public class SqliteProductRepository : IProductRepository
                 Guid.Parse(reader.GetString(0)),
                 reader.GetString(1),
                 reader.GetString(2),
-                reader.GetInt32(3),
-                reader.GetDecimal(4)
+                Convert.ToDecimal(reader.GetValue(3)),
+                reader.GetDecimal(4),
+                reader.IsDBNull(5) ? 0m : reader.GetDecimal(5),
+                reader.IsDBNull(6) ? UnitOfMeasure.Pieza : UnitOfMeasureExtensions.ParseOrDefault(reader.GetString(6))
             ));
         }
         return items;
@@ -260,19 +228,13 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             string query = @"
-            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock)
-            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock);";
+            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit)
+            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit);";
 
             foreach (var product in products)
             {
                 using var command = new SqliteCommand(query, connection, transaction);
-                command.Parameters.AddWithValue("@Id", product.Id.ToString());
-                command.Parameters.AddWithValue("@Barcode", product.Barcode);
-                command.Parameters.AddWithValue("@Name", product.Name);
-                command.Parameters.AddWithValue("@CostPrice", product.CostPrice);
-                command.Parameters.AddWithValue("@RetailPrice", product.RetailPrice);
-                command.Parameters.AddWithValue("@Stock", product.Stock);
-
+                BindProductParameters(command, product);
                 command.ExecuteNonQuery();
             }
 
@@ -295,7 +257,7 @@ public class SqliteProductRepository : IProductRepository
 
         // Filtramos usando la función date() de SQLite para comparar rangos de forma limpia (YYYY-MM-DD)
         string query = @"
-        SELECT Id, CreatedAt, Total, PaymentMethod, CardReference 
+        SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount
         FROM Sales 
         WHERE date(CreatedAt) >= date(@StartDate) 
           AND date(CreatedAt) <= date(@EndDate)";
@@ -322,14 +284,243 @@ public class SqliteProductRepository : IProductRepository
         while (reader.Read())
         {
             // Cabecera con Total de BD; el desglose se carga al seleccionar el ticket (GetSaleDetails)
-            sales.Add(new Sale(
-                Guid.Parse(reader.GetString(0)),
-                DateTime.Parse(reader.GetString(1)),
-                new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, reader.GetDecimal(2)) },
-                reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3),
-                reader.IsDBNull(4) ? string.Empty : reader.GetString(4)
-            ));
+            sales.Add(MapSaleHeader(reader));
         }
         return sales;
     }
+
+    public CashClose? GetCashClose(DateTime businessDate)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            SELECT BusinessDate, OpeningCash, CountedCash, ClosedAt
+            FROM CashCloses
+            WHERE BusinessDate = @BusinessDate;";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@BusinessDate", businessDate.ToString("yyyy-MM-dd"));
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        decimal? counted = reader.IsDBNull(2) ? null : ReadMoney(reader, 2);
+        DateTime? closedAt = reader.IsDBNull(3) ? null : DateTime.Parse(reader.GetString(3));
+
+        return new CashClose(
+            DateTime.Parse(reader.GetString(0)),
+            ReadMoney(reader, 1),
+            counted,
+            closedAt);
+    }
+
+    public void SaveOpeningCash(DateTime businessDate, decimal openingCash)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            INSERT INTO CashCloses (BusinessDate, OpeningCash, CountedCash, ClosedAt)
+            VALUES (@BusinessDate, @OpeningCash, NULL, NULL)
+            ON CONFLICT(BusinessDate) DO UPDATE SET OpeningCash = excluded.OpeningCash;";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@BusinessDate", businessDate.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("@OpeningCash", openingCash);
+        command.ExecuteNonQuery();
+    }
+
+    public void CloseCashDay(DateTime businessDate, decimal countedCash)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            UPDATE CashCloses
+            SET CountedCash = @CountedCash, ClosedAt = @ClosedAt
+            WHERE BusinessDate = @BusinessDate;";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@BusinessDate", businessDate.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("@CountedCash", countedCash);
+        command.Parameters.AddWithValue("@ClosedAt", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+        if (command.ExecuteNonQuery() == 0)
+            throw new InvalidOperationException("Guarda el fondo de caja antes de cerrar el día.");
+    }
+
+    public PaymentDayTotals GetPaymentTotals(DateTime businessDate)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN PaymentMethod = 'EFECTIVO' THEN Total
+                        WHEN PaymentMethod = 'MIXTO' THEN Total - COALESCE(CardAmount, 0)
+                        ELSE 0
+                    END), 0),
+                COALESCE(SUM(
+                    CASE
+                        WHEN PaymentMethod = 'EFECTIVO' THEN 1
+                        WHEN PaymentMethod = 'MIXTO' AND (Total - COALESCE(CardAmount, 0)) > 0 THEN 1
+                        ELSE 0
+                    END), 0),
+                COALESCE(SUM(
+                    CASE
+                        WHEN PaymentMethod = 'TARJETA' THEN Total
+                        WHEN PaymentMethod = 'MIXTO' THEN COALESCE(CardAmount, 0)
+                        ELSE 0
+                    END), 0),
+                COALESCE(SUM(
+                    CASE
+                        WHEN PaymentMethod = 'TARJETA' THEN 1
+                        WHEN PaymentMethod = 'MIXTO' AND COALESCE(CardAmount, 0) > 0 THEN 1
+                        ELSE 0
+                    END), 0),
+                MAX(CreatedAt)
+            FROM Sales
+            WHERE date(CreatedAt) = date(@BusinessDate);";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@BusinessDate", businessDate.ToString("yyyy-MM-dd"));
+
+        using var reader = command.ExecuteReader();
+        reader.Read();
+
+        DateTime? lastSaleAt = reader.IsDBNull(4) ? null : DateTime.Parse(reader.GetString(4));
+
+        return new PaymentDayTotals(
+            ReadMoney(reader, 0),
+            Convert.ToInt32(reader.GetValue(1)),
+            ReadMoney(reader, 2),
+            Convert.ToInt32(reader.GetValue(3)),
+            lastSaleAt);
+    }
+
+    public void SaveCashMovement(CashMovement movement)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            INSERT INTO CashMovements (Id, BusinessDate, Kind, Amount, Concept, CreatedAt)
+            VALUES (@Id, @BusinessDate, @Kind, @Amount, @Concept, @CreatedAt);";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@Id", movement.Id.ToString());
+        command.Parameters.AddWithValue("@BusinessDate", movement.BusinessDate.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("@Kind", movement.KindCode);
+        command.Parameters.AddWithValue("@Amount", movement.Amount);
+        command.Parameters.AddWithValue("@Concept", movement.Concept);
+        command.Parameters.AddWithValue("@CreatedAt", movement.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
+        command.ExecuteNonQuery();
+    }
+
+    public List<CashMovement> GetCashMovements(DateTime businessDate)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            SELECT Id, BusinessDate, Kind, Amount, Concept, CreatedAt
+            FROM CashMovements
+            WHERE BusinessDate = @BusinessDate
+            ORDER BY CreatedAt DESC, Id DESC;";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@BusinessDate", businessDate.ToString("yyyy-MM-dd"));
+
+        var movements = new List<CashMovement>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            movements.Add(new CashMovement(
+                Guid.Parse(reader.GetString(0)),
+                DateTime.Parse(reader.GetString(1)),
+                CashMovement.ParseKind(reader.GetString(2)),
+                ReadMoney(reader, 3),
+                reader.GetString(4),
+                DateTime.Parse(reader.GetString(5))));
+        }
+
+        return movements;
+    }
+
+    public CashMovementDayTotals GetCashMovementTotals(DateTime businessDate)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = @"
+            SELECT
+                COALESCE(SUM(CASE WHEN Kind = 'ENTRADA' THEN Amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN Kind = 'SALIDA' THEN Amount ELSE 0 END), 0)
+            FROM CashMovements
+            WHERE BusinessDate = @BusinessDate;";
+
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@BusinessDate", businessDate.ToString("yyyy-MM-dd"));
+
+        using var reader = command.ExecuteReader();
+        reader.Read();
+
+        return new CashMovementDayTotals(ReadMoney(reader, 0), ReadMoney(reader, 1));
+    }
+
+    private static Sale MapSaleHeader(SqliteDataReader reader)
+    {
+        decimal total = reader.GetDecimal(2);
+        string method = reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3);
+        string cardReference = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
+        decimal amountReceived = reader.IsDBNull(5) ? 0m : reader.GetDecimal(5);
+        decimal cardAmount = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetDecimal(6) : 0m;
+
+        return new Sale(
+            Guid.Parse(reader.GetString(0)),
+            DateTime.Parse(reader.GetString(1)),
+            new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, total, 0m) },
+            method,
+            cardReference,
+            amountReceived,
+            cardAmount);
+    }
+
+    private static Product MapProduct(SqliteDataReader reader)
+    {
+        var unit = reader.FieldCount > 6 && !reader.IsDBNull(6)
+            ? UnitOfMeasureExtensions.ParseOrDefault(reader.GetString(6))
+            : UnitOfMeasure.Pieza;
+        decimal stock = decimal.Round(
+            Convert.ToDecimal(reader.GetValue(5)),
+            unit.MaxDecimalPlaces(),
+            MidpointRounding.AwayFromZero);
+
+        return new Product(
+            Guid.Parse(reader.GetString(0)),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetDecimal(3),
+            reader.GetDecimal(4),
+            stock,
+            unit);
+    }
+
+    private static void BindProductParameters(SqliteCommand command, Product product)
+    {
+        command.Parameters.AddWithValue("@Id", product.Id.ToString());
+        command.Parameters.AddWithValue("@Barcode", product.Barcode);
+        command.Parameters.AddWithValue("@Name", product.Name);
+        command.Parameters.AddWithValue("@CostPrice", product.CostPrice);
+        command.Parameters.AddWithValue("@RetailPrice", product.RetailPrice);
+        command.Parameters.AddWithValue("@Stock", product.Stock);
+        command.Parameters.AddWithValue("@Unit", product.Unit.ToString());
+    }
+
+    private static decimal ReadMoney(SqliteDataReader reader, int ordinal) =>
+        Math.Round(Convert.ToDecimal(reader.GetValue(ordinal)), 2, MidpointRounding.AwayFromZero);
 }
