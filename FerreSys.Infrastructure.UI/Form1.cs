@@ -1,6 +1,7 @@
 using FerreSys.Application;
 using FerreSys.Domain;
 using FerreSys.Infrastructure.Persistence;
+using FerreSys.Infrastructure.UI.Printing;
 
 namespace FerreSys.Infrastructure.UI;
 
@@ -26,6 +27,7 @@ public partial class Form1 : Form
     private ToolStripButton btnCashCloseX = null!;
     private ToolStripButton btnCashCloseZ = null!;
     private ToolStripButton btnCashMovements = null!;
+    private ToolStripButton btnKardex = null!;
     private ToolStripButton btnImportExcel = null!;
     private ToolStripStatusLabel lblStockAlerts = null!;
 
@@ -48,10 +50,14 @@ public partial class Form1 : Form
     private readonly CloseCashDayUseCase _closeCashDayUseCase;
     private readonly GetCashMovementsUseCase _getCashMovementsUseCase;
     private readonly RegisterCashMovementUseCase _registerCashMovementUseCase;
+    private readonly GetStockMovementsUseCase _getStockMovementsUseCase;
     private readonly UpdateProductUseCase _updateProductUseCase;
     private ContextMenuStrip cmsSearchMenu = null!;
     private readonly ImportProductsUseCase _importProductsUseCase;
     private readonly AdjustStockUseCase _adjustStockUseCase;
+    private readonly SqliteAppSettingsStore _appSettings;
+    private readonly PrintSaleTicketUseCase _printSaleTicketUseCase;
+    private SerialBarcodeScanner? _serialScanner;
     private decimal _saleTotal = 0;
 
     public Form1()
@@ -69,9 +75,12 @@ public partial class Form1 : Form
         _closeCashDayUseCase = new CloseCashDayUseCase(_productRepository);
         _getCashMovementsUseCase = new GetCashMovementsUseCase(_productRepository);
         _registerCashMovementUseCase = new RegisterCashMovementUseCase(_productRepository);
+        _getStockMovementsUseCase = new GetStockMovementsUseCase(_productRepository);
         _updateProductUseCase = new UpdateProductUseCase(_productRepository);
         _importProductsUseCase = new ImportProductsUseCase(_productRepository, _subscriptionService);
         _adjustStockUseCase = new AdjustStockUseCase(_productRepository);
+        _appSettings = new SqliteAppSettingsStore(_dbContext);
+        _printSaleTicketUseCase = new PrintSaleTicketUseCase();
 
         // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
         var version = typeof(Program).Assembly.GetName().Version;
@@ -124,6 +133,7 @@ public partial class Form1 : Form
         SetupSearchContextMenu();
         CalculateTotal();
         RefreshStockAlerts();
+        ApplySerialScanner(notifyOnError: false);
         txtBuscador.Focus();
     }
 
@@ -143,12 +153,15 @@ public partial class Form1 : Form
         var mCorteZ = new ToolStripMenuItem("Corte &Z (cierre)...", null, (_, _) => OpenCashClose(CashCutMode.Z));
         var mMovimientos = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
         var mImportar = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
+        var mNegocio = new ToolStripMenuItem("&Datos del negocio...", null, (_, _) => OpenBusinessProfile());
+        var mPerifericos = new ToolStripMenuItem("&Periféricos e impresión...", null, (_, _) => OpenPeripherals());
         var mSalir = new ToolStripMenuItem("&Salir", null, (_, _) => Close());
-        mArchivo.DropDownItems.AddRange([mVentas, mUtilidad, mSugerido, mCorteX, mCorteZ, mMovimientos, mImportar, new ToolStripSeparator(), mSalir]);
+        mArchivo.DropDownItems.AddRange([mVentas, mUtilidad, mSugerido, mCorteX, mCorteZ, mMovimientos, mImportar, mNegocio, mPerifericos, new ToolStripSeparator(), mSalir]);
 
         var mProductos = new ToolStripMenuItem("&Productos");
         mProductos.DropDownItems.Add(new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click));
         mProductos.DropDownItems.Add(new ToolStripMenuItem("Sugerido de &compra...", null, (_, _) => OpenPurchaseSuggestion()));
+        mProductos.DropDownItems.Add(new ToolStripMenuItem("&Historial de movimientos (Kárdex)...", null, (_, _) => OpenKardex()));
 
         var mVenta = new ToolStripMenuItem("&Venta");
         mVenta.DropDownItems.Add(new ToolStripMenuItem("&Cobrar (F5)", null, BtnCheckout_Click));
@@ -193,11 +206,20 @@ public partial class Form1 : Form
         btnCashMovements = CreateToolItem("Movimientos", UiIcons.CashMovements());
         btnCashMovements.Click += (_, _) => OpenCashMovements();
 
+        btnKardex = CreateToolItem("Kárdex", UiIcons.Kardex());
+        btnKardex.Click += (_, _) => OpenKardex();
+
         btnImportExcel = CreateToolItem("Importar CSV", UiIcons.Import());
         btnImportExcel.Click += BtnImportExcel_Click;
 
         btnOpenAddProduct = CreateToolItem("Registrar", UiIcons.AddProduct());
         btnOpenAddProduct.Click += BtnOpenAddProduct_Click;
+
+        var btnBusiness = CreateToolItem("Negocio", UiIcons.Business());
+        btnBusiness.Click += (_, _) => OpenBusinessProfile();
+
+        var btnPeripherals = CreateToolItem("Periféricos", UiIcons.Printer());
+        btnPeripherals.Click += (_, _) => OpenPeripherals();
 
         var brand = new ToolStripLabel("  FerreSys — Punto de Venta")
         {
@@ -212,8 +234,11 @@ public partial class Form1 : Form
             btnCashCloseX,
             btnCashCloseZ,
             btnCashMovements,
+            btnKardex,
             btnImportExcel,
             btnOpenAddProduct,
+            btnBusiness,
+            btnPeripherals,
             new ToolStripSeparator(),
             brand
         ]);
@@ -632,7 +657,7 @@ public partial class Form1 : Form
 
     private void OpenSales()
     {
-        using var f = new SalesHistoryForm(_productRepository);
+        using var f = new SalesHistoryForm(_productRepository, _appSettings);
         f.ShowDialog();
     }
 
@@ -667,6 +692,12 @@ public partial class Form1 : Form
             _registerCashMovementUseCase,
             _getDailyCashSummaryUseCase);
         f.ShowDialog();
+    }
+
+    private void OpenKardex(Product? product = null)
+    {
+        using var f = new KardexForm(_getStockMovementsUseCase, _productRepository, product);
+        f.ShowDialog(this);
     }
 
     private void Form1_Shown(object? sender, EventArgs e)
@@ -708,8 +739,12 @@ public partial class Form1 : Form
         var menuAudit = new ToolStripMenuItem { Text = "Auditar / Ajustar Stock" };
         menuAudit.Click += MenuAudit_Click;
 
+        var menuKardex = new ToolStripMenuItem { Text = "Ver Kárdex" };
+        menuKardex.Click += MenuKardex_Click;
+
         cmsSearchMenu.Items.Add(menuEdit);
         cmsSearchMenu.Items.Add(menuAudit);
+        cmsSearchMenu.Items.Add(menuKardex);
         dgvSearch.ContextMenuStrip = cmsSearchMenu;
 
         dgvSearch.CellMouseDown += (s, e) =>
@@ -1087,35 +1122,11 @@ public partial class Form1 : Form
                 });
             }
 
-            var saleItemsForTicket = new List<SaleItem>();
-            foreach (DataGridViewRow row in dgvCart.Rows)
-            {
-                string barcode = CellText(row, 0);
-                var p = _productRepository.GetByBarcode(barcode)!;
-                decimal qty = Convert.ToDecimal(row.Cells["Qty"].Value);
-                saleItemsForTicket.Add(new SaleItem(p.Id, p.Barcode, p.Name, qty, p.RetailPrice, p.CostPrice, p.Unit));
-            }
-
-            // Pasamos el método y referencia también al objeto simulado del ticket impreso
-            var simulatedSale = new Sale(
-                Guid.NewGuid(),
-                DateTime.Now,
-                saleItemsForTicket,
-                method,
-                reference,
-                amountReceived,
-                cardAmount);
-
-            // 2. Ejecutar caso de uso enviando los nuevos datos de control financiero
-            _processSaleUseCase.Execute(items, method, reference, amountReceived, cardAmount);
-
-            // 3. Generación del ticket impreso
-            string ticketText = TicketFormatter.GenerateTicketText(simulatedSale);
-
-            MessageBox.Show(ticketText, "Vista Previa del Ticket Impreso (58mm)", MessageBoxButtons.OK, MessageBoxIcon.None);
+            Sale sale = _processSaleUseCase.Execute(items, method, reference, amountReceived, cardAmount);
+            PrintSaleTicket(sale);
 
             if (method == "EFECTIVO" || method == "MIXTO")
-                SetStatus($"Venta cobrada. Cambio: ${simulatedSale.Change:N2}");
+                SetStatus($"Venta cobrada. Cambio: ${sale.Change:N2}");
             else
                 SetStatus("Venta cobrada con tarjeta");
 
@@ -1143,8 +1154,114 @@ public partial class Form1 : Form
         }
     }
 
+    private void PrintSaleTicket(Sale sale)
+    {
+        PeripheralSettings devices = _appSettings.GetPeripheralSettings();
+        BusinessTicketProfile profile = _appSettings.GetTicketProfile();
+        IThermalPrinter? printer = null;
+        if (devices.HasPrinterConfigured)
+        {
+            try
+            {
+                printer = ThermalPrinterFactory.Create(devices);
+            }
+            catch (Exception ex)
+            {
+                ShowTicketFallback(TicketFormatter.GenerateTicketText(sale, profile), ex.Message);
+                return;
+            }
+        }
+
+        byte[]? logo = TicketLogoPrinter.TryEncode(_appSettings, profile);
+        PrintSaleTicketResult result = _printSaleTicketUseCase.Execute(sale, profile, devices, printer, logo);
+        if (!result.Success)
+            ShowTicketFallback(result.TicketText, result.Error);
+    }
+
+    private static void ShowTicketFallback(string ticketText, string? error)
+    {
+        string body = string.IsNullOrWhiteSpace(error)
+            ? ticketText
+            : error + Environment.NewLine + Environment.NewLine + ticketText;
+        MessageBox.Show(body, "Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void OpenBusinessProfile()
+    {
+        using var form = new BusinessProfileForm(_appSettings);
+        form.ShowDialog(this);
+    }
+
+    private void OpenPeripherals()
+    {
+        StopSerialScanner();
+        using var form = new PeripheralsForm(_appSettings);
+        form.ShowDialog(this);
+        ApplySerialScanner(notifyOnError: true);
+    }
+
+    private void ApplySerialScanner(bool notifyOnError)
+    {
+        StopSerialScanner();
+        PeripheralSettings devices = _appSettings.GetPeripheralSettings();
+        if (devices.ScannerMode != ScannerMode.Serial || string.IsNullOrWhiteSpace(devices.ScannerSerialPort))
+            return;
+
+        try
+        {
+            _serialScanner = new SerialBarcodeScanner();
+            _serialScanner.BarcodeReceived += OnSerialBarcode;
+            _serialScanner.Start(devices.ScannerSerialPort, devices.ScannerBaudRate);
+            SetStatus($"Escáner serie en {devices.ScannerSerialPort}");
+        }
+        catch (Exception ex)
+        {
+            StopSerialScanner();
+            SetStatus("Escáner serie no disponible");
+            if (notifyOnError)
+            {
+                MessageBox.Show(
+                    $"No se pudo abrir el escáner en {devices.ScannerSerialPort}.\n\n{ex.Message}",
+                    "Escáner",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+    }
+
+    private void OnSerialBarcode(object? sender, string code)
+    {
+        if (IsDisposed || string.IsNullOrWhiteSpace(code))
+            return;
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => OnSerialBarcode(sender, code));
+            return;
+        }
+
+        if (OwnedForms.Any(form => form.Visible))
+            return;
+
+        txtBuscador.Text = code.Trim();
+        txtBuscador.Focus();
+        if (dgvSearch.Rows.Count == 1)
+            AddToCart(dgvSearch.Rows[0]);
+    }
+
+    private void StopSerialScanner()
+    {
+        if (_serialScanner == null)
+            return;
+
+        _serialScanner.BarcodeReceived -= OnSerialBarcode;
+        _serialScanner.Dispose();
+        _serialScanner = null;
+    }
+
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
     {
+        StopSerialScanner();
         try
         {
             string backupFolder = Path.Combine(
@@ -1299,7 +1416,18 @@ public partial class Form1 : Form
                 ImportProductsResult result = _importProductsUseCase.Execute(openFileDialog.FileName);
 
                 if (result.Products.Count > 0)
-                    _productRepository.SaveBulk(result.Products);
+                {
+                    var movements = result.Products
+                        .Select(p => StockMovementFactory.Create(
+                            p,
+                            StockMovementKind.CargaInicial,
+                            quantityBefore: 0m,
+                            quantityDelta: p.Stock,
+                            quantityAfter: p.Stock,
+                            notes: "Importación CSV"))
+                        .ToList();
+                    _productRepository.SaveBulkWithStockMovements(result.Products, movements);
+                }
 
                 if (result.SkippedByLimit > 0 && result.Products.Count == 0)
                 {
@@ -1375,6 +1503,16 @@ public partial class Form1 : Form
                 }
             }
         }
+    }
+
+    private void MenuKardex_Click(object? sender, EventArgs e)
+    {
+        if (dgvSearch.CurrentRow == null)
+            return;
+
+        string barcode = CellText(dgvSearch.CurrentRow, "Barcode");
+        var product = _productRepository.GetByBarcode(barcode);
+        OpenKardex(product);
     }
 
     private static string CellText(DataGridViewRow row, string columnName) =>

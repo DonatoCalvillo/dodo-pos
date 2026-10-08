@@ -19,6 +19,39 @@ public interface IProductRepository
 
     void SaveSale(Sale sale);
 
+    /// <summary>
+    /// Persists sale header/details, product stock updates and kardex lines in one transaction.
+    /// </summary>
+    void SaveSaleWithInventory(
+        Sale sale,
+        IReadOnlyList<Product> products,
+        IReadOnlyList<StockMovement> movements);
+
+    void SaveStockMovement(StockMovement movement);
+
+    void SaveStockMovements(IReadOnlyList<StockMovement> movements);
+
+    /// <summary>
+    /// Inserts products and their initial-load kardex lines in one transaction.
+    /// </summary>
+    void SaveBulkWithStockMovements(List<Product> products, IReadOnlyList<StockMovement> movements);
+
+    /// <summary>
+    /// Updates a product and optionally writes a kardex line in one transaction.
+    /// </summary>
+    void UpdateWithStockMovement(Product product, StockMovement? movement);
+
+    /// <summary>
+    /// Inserts a product and optionally writes a kardex line in one transaction.
+    /// </summary>
+    void SaveWithStockMovement(Product product, StockMovement? movement);
+
+    List<StockMovement> GetStockMovements(
+        Guid? productId,
+        DateTime? fromInclusive,
+        DateTime? toInclusive,
+        StockMovementKind? kind);
+
     List<Sale> GetSalesHistory();
 
     // Reemplaza el anterior por este que acepta filtros

@@ -114,6 +114,22 @@ public class Product
         Stock += quantity;
     }
 
+    /// <summary>
+    /// Sets absolute stock (audit / edit). Returns (before, delta, after).
+    /// </summary>
+    public (decimal Before, decimal Delta, decimal After) AdjustStock(decimal newStock)
+    {
+        if (newStock < 0)
+            throw new ArgumentException("El stock de inventario no puede ser una cantidad negativa.");
+
+        ValidateQuantityForUnit(newStock, Unit, allowZero: true);
+
+        decimal before = Stock;
+        decimal after = decimal.Round(newStock, Unit.MaxDecimalPlaces(), MidpointRounding.AwayFromZero);
+        Stock = after;
+        return (before, after - before, after);
+    }
+
     private static void ValidateQuantityForUnit(decimal quantity, UnitOfMeasure unit, bool allowZero)
     {
         if (!allowZero && quantity <= 0)

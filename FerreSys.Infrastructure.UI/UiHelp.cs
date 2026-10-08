@@ -212,7 +212,7 @@ internal static class SectionHelpText
         "Busca por nombre o escanea código de barras.\n\n" +
         "• Enter con un solo resultado: añade al carrito.\n" +
         "• Doble clic: añade al carrito.\n" +
-        "• Clic derecho: editar producto o auditar stock.";
+        "• Clic derecho: editar producto, auditar stock o ver Kárdex.";
 
     public const string CatalogResults =
         "Resultados del catálogo según la búsqueda.\n\n" +
@@ -267,4 +267,39 @@ internal static class SectionHelpText
         "• Orden: primero agotados, luego bajo mínimo.\n" +
         "• Usa Exportar CSV para enviar el listado al proveedor.\n" +
         "• Imprimir / PDF abre la vista previa y el diálogo de impresión de Windows.";
+
+    public const string KardexFilters =
+        "Consulta el historial de entradas y salidas de inventario (Kárdex).\n\n" +
+        "• Filtra por rango de fechas, tipo de movimiento y código de producto.\n" +
+        "• Enter en Código o Consultar aplica el filtro de producto.\n" +
+        "• Sin código se muestran movimientos de todos los productos.\n\n" +
+        "Tipos: Venta, Ajuste de Auditoría, Carga Inicial. Devolución queda reservado.";
+
+    public const string BusinessProfile =
+        "Así se imprime el ticket térmico.\n\n" +
+        "• Llena solo lo que quieras mostrar. Un campo vacío no sale en el papel.\n" +
+        "• Encabezado y pie: marca lo que se imprime y súbelo o bájalo para cambiar el orden.\n" +
+        "• La venta (fecha, productos y total) siempre queda en medio.\n" +
+        "• El logo se guarda junto a la base de datos y se imprime en la térmica.\n" +
+        "• 58 mm usa 32 columnas; 80 mm usa 48. La vista previa usa el mismo orden.";
+
+    public const string PeripheralsPrinter =
+        "Impresora térmica ESC/POS.\n\n" +
+        "• Windows: impresoras USB instaladas en el equipo.\n" +
+        "• COM: puerto serie directo.\n" +
+        "• Red: IP y puerto 9100 (raw).\n\n" +
+        "Probar impresión envía un ticket de prueba. Probar cajón envía el pulso RJ11.";
+
+    public const string PeripheralsScanner =
+        "Escáner de códigos.\n\n" +
+        "• Teclado: el USB escribe en el buscador del mostrador (modo HID).\n" +
+        "• Serie: FerreSys lee el puerto COM y añade el producto al carrito.\n\n" +
+        "Probar lectura muestra el último código recibido.";
+
+    public const string KardexList =
+        "Auditoría paso a paso del stock.\n\n" +
+        "• Cant. anterior → Cant. movida (+/−) → Stock resultante.\n" +
+        "• Usuario = cuenta de Windows que ejecutó la app.\n" +
+        "• En ventas, la referencia es el ID corto del ticket.\n" +
+        "• Los movimientos se registran desde el despliegue del Kárdex (sin backfill).";
 }

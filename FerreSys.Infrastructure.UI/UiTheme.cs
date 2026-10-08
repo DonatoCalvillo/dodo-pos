@@ -129,6 +129,19 @@ internal static class UiIcons
         g.DrawRectangle(pen, 3, 3, 18, 18);
     });
 
+    public static Bitmap Kardex(int size = 24) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);
+        using var paper = new SolidBrush(Color.FromArgb(245, 245, 240));
+        g.FillRectangle(paper, 4, 3, 16, 18);
+        g.DrawRectangle(pen, 4, 3, 16, 18);
+        g.DrawLine(pen, 7, 7, 17, 7);
+        g.DrawLine(pen, 7, 11, 17, 11);
+        g.DrawLine(pen, 7, 15, 14, 15);
+        using var mark = new SolidBrush(Color.FromArgb(0, 70, 180));
+        g.FillRectangle(mark, 7, 17, 3, 2);
+    });
+
     public static Bitmap GrossProfit(int size = 24) => Draw(size, g =>
     {
         using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.6f);
@@ -161,6 +174,32 @@ internal static class UiIcons
         g.DrawRectangle(pen, 3, 6, 16, 11);
         using var stripe = new SolidBrush(Color.FromArgb(40, 40, 40));
         g.FillRectangle(stripe, 3, 8, 16, 3);
+    });
+
+    public static Bitmap Business(int size = 24) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);
+        using var roof = new SolidBrush(Color.FromArgb(180, 70, 50));
+        using var wall = new SolidBrush(Color.FromArgb(230, 210, 170));
+        Point[] roofPts = [new(3, 11), new(12, 3), new(21, 11)];
+        g.FillPolygon(roof, roofPts);
+        g.DrawPolygon(pen, roofPts);
+        g.FillRectangle(wall, 6, 11, 12, 9);
+        g.DrawRectangle(pen, 6, 11, 12, 9);
+        using var door = new SolidBrush(Color.FromArgb(90, 60, 40));
+        g.FillRectangle(door, 10, 14, 4, 6);
+    });
+
+    public static Bitmap Printer(int size = 24) => Draw(size, g =>
+    {
+        using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);
+        using var body = new SolidBrush(Color.FromArgb(90, 140, 190));
+        g.FillRectangle(body, 4, 6, 16, 10);
+        g.DrawRectangle(pen, 4, 6, 16, 10);
+        g.DrawRectangle(pen, 7, 3, 10, 4);
+        g.DrawLine(pen, 6, 18, 18, 18);
+        g.DrawLine(pen, 8, 16, 8, 18);
+        g.DrawLine(pen, 16, 16, 16, 18);
     });
 
     public static Bitmap StatusDot(Color color, int size = 12) => Draw(size, g =>

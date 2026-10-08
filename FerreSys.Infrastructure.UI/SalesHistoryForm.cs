@@ -5,6 +5,8 @@ namespace FerreSys.Infrastructure.UI;
 public partial class SalesHistoryForm : Form
 {
     private readonly IProductRepository _productRepository;
+    private readonly IAppSettingsStore _settings;
+    private readonly Dictionary<Guid, Sale> _headers = new();
 
     // Controles de Filtros Avanzados
     private TextBox txtSearchId = null!;
@@ -19,9 +21,10 @@ public partial class SalesHistoryForm : Form
     private DataGridView dgvDetails = null!;
     private Label lblRevenue = null!;
 
-    public SalesHistoryForm(IProductRepository productRepository)
+    public SalesHistoryForm(IProductRepository productRepository, IAppSettingsStore settings)
     {
         _productRepository = productRepository;
+        _settings = settings;
         InitializeComponent();
 
         // Ejecutar búsqueda inicial seteando "Hoy" de forma predeterminada
@@ -83,6 +86,7 @@ public partial class SalesHistoryForm : Form
         Column(dgvSales, "Date").FillWeight = 110;
         Column(dgvSales, "Total").FillWeight = 75;
         dgvSales.SelectionChanged += DgvSales_SelectionChanged;
+        dgvSales.CellDoubleClick += DgvSales_CellDoubleClick;
 
         // Tabla Derecha: Detalles del Ticket
         var lblDetails = new Label { Text = "Detalles del Ticket Seleccionado:", Location = new Point(520, yTables - 20), Size = new Size(300, 20), Font = new Font("Arial", 9, FontStyle.Bold) };
@@ -118,6 +122,7 @@ public partial class SalesHistoryForm : Form
     {
         dgvSales.Rows.Clear();
         dgvDetails.Rows.Clear();
+        _headers.Clear();
 
         DateTime startDate = dtpStart.Value;
         DateTime endDate = dtpEnd.Value;
@@ -131,6 +136,7 @@ public partial class SalesHistoryForm : Form
             // Mostramos los primeros 8 caracteres del ID en mayúsculas (ID Ticket) para que coincida con el formato del papel impreso
             string shortId = sale.Id.ToString()[..8].ToUpper();
 
+            _headers[sale.Id] = sale;
             dgvSales.Rows.Add(sale.Id, shortId, sale.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"), $"${sale.Total:N2}");
             totalRevenue += sale.Total;
         }
@@ -163,6 +169,34 @@ public partial class SalesHistoryForm : Form
                 );
             }
         }
+    }
+
+    private void DgvSales_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0)
+            return;
+        if (dgvSales.Rows[e.RowIndex].Cells[0].Value is not Guid saleId)
+            return;
+        if (!_headers.TryGetValue(saleId, out Sale? header))
+            return;
+
+        List<SaleItem> items = _productRepository.GetSaleDetails(saleId);
+        if (items.Count == 0)
+        {
+            MessageBox.Show("Este ticket no tiene productos para imprimir.", "Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var sale = new Sale(
+            header.Id,
+            header.CreatedAt,
+            items,
+            header.PaymentMethod,
+            header.CardReference,
+            header.AmountReceived,
+            header.CardAmount);
+        using var dialog = new ReprintTicketForm(sale, _settings);
+        dialog.ShowDialog(this);
     }
 
     private static DataGridViewColumn Column(DataGridView grid, string name) =>

@@ -6,6 +6,8 @@ public class SqliteDbContext
 {
     private readonly string _connectionString;
 
+    public string DataFolder { get; }
+
     public SqliteDbContext()
     {
         // Obtenemos la ruta de AppData/Local del usuario (ej: C:\Users\Nombre\AppData\Local\FerreSys)
@@ -13,6 +15,7 @@ public class SqliteDbContext
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "FerreSys"
         );
+        DataFolder = appDataFolder;
 
         // Creamos la carpeta automáticamente si no existe
         if (!Directory.Exists(appDataFolder))
@@ -112,6 +115,30 @@ public class SqliteDbContext
             CreatedAt TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS IX_CashMovements_BusinessDate ON CashMovements(BusinessDate);
+
+        CREATE TABLE IF NOT EXISTS StockMovements (
+            Id TEXT PRIMARY KEY,
+            ProductId TEXT NOT NULL,
+            Barcode TEXT NOT NULL,
+            ProductName TEXT NOT NULL,
+            OccurredAt TEXT NOT NULL,
+            Kind TEXT NOT NULL,
+            QuantityBefore REAL NOT NULL,
+            QuantityDelta REAL NOT NULL,
+            QuantityAfter REAL NOT NULL,
+            Actor TEXT NOT NULL,
+            ReferenceId TEXT,
+            Notes TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS IX_StockMovements_ProductId_OccurredAt
+            ON StockMovements(ProductId, OccurredAt);
+        CREATE INDEX IF NOT EXISTS IX_StockMovements_OccurredAt
+            ON StockMovements(OccurredAt);
+
+        CREATE TABLE IF NOT EXISTS AppSettings (
+            Key TEXT PRIMARY KEY,
+            Value TEXT NOT NULL
+        );
     ";
 
         using var command = new SqliteCommand(createTablesQuery, connection);

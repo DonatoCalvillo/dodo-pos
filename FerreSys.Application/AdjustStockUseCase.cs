@@ -11,34 +11,22 @@ public class AdjustStockUseCase
         _productRepository = productRepository;
     }
 
-    public void Execute(string barcode, decimal newStock)
+    public void Execute(string barcode, decimal newStock, string notes = "")
     {
-        if (newStock < 0)
-        {
-            throw new ArgumentException("El stock de inventario no puede ser una cantidad negativa.");
-        }
-
-        // 1. Buscamos el producto por su identificador único de negocio
         var product = _productRepository.GetByBarcode(barcode);
         if (product == null)
         {
             throw new KeyNotFoundException($"No se encontró el producto con código '{barcode}' para ajustar stock.");
         }
 
-        // 2. Usamos las reglas del dominio para reconstruir la entidad con el nuevo stock
-        var updatedProduct = new Product(
-            product.Id,
-            product.Barcode,
-            product.Name,
-            product.CostPrice,
-            product.RetailPrice,
-            newStock,
-            product.Unit,
-            product.MinStock,
-            product.DesiredStock
-        );
+        var (before, delta, after) = product.AdjustStock(newStock);
+        var movement = StockMovementFactory.CreateIfChanged(
+            product,
+            StockMovementKind.AjusteAuditoria,
+            before,
+            after,
+            notes: string.IsNullOrWhiteSpace(notes) ? "Ajuste de auditoría" : notes);
 
-        // 3. Mandamos a actualizar mediante el repositorio
-        _productRepository.Update(updatedProduct);
+        _productRepository.UpdateWithStockMovement(product, movement);
     }
 }

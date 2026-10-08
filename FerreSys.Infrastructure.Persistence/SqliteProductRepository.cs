@@ -141,6 +141,256 @@ public class SqliteProductRepository : IProductRepository
         }
     }
 
+    public void SaveSaleWithInventory(
+        Sale sale,
+        IReadOnlyList<Product> products,
+        IReadOnlyList<StockMovement> movements)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            string updateQuery = @"
+                UPDATE Products
+                SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock,
+                    Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock
+                WHERE Id = @Id;";
+
+            foreach (var product in products)
+            {
+                using var cmdUpdate = new SqliteCommand(updateQuery, connection, transaction);
+                BindProductParameters(cmdUpdate, product);
+                cmdUpdate.ExecuteNonQuery();
+            }
+
+            string saleQuery =
+                "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount) " +
+                "VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount);";
+            using (var cmdSale = new SqliteCommand(saleQuery, connection, transaction))
+            {
+                cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
+                cmdSale.Parameters.AddWithValue("@CreatedAt", sale.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
+                cmdSale.Parameters.AddWithValue("@Total", sale.Total);
+                cmdSale.Parameters.AddWithValue("@PaymentMethod", sale.PaymentMethod);
+                cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
+                cmdSale.Parameters.AddWithValue("@AmountReceived", sale.AmountReceived);
+                cmdSale.Parameters.AddWithValue("@CardAmount", sale.CardAmount);
+                cmdSale.ExecuteNonQuery();
+            }
+
+            string detailQuery = @"
+                INSERT INTO SaleDetails (SaleId, ProductId, Barcode, ProductName, Quantity, PriceSold, UnitPrice, CostPrice, Unit)
+                VALUES (@SaleId, @ProductId, @Barcode, @ProductName, @Quantity, @PriceSold, @UnitPrice, @CostPrice, @Unit);";
+
+            foreach (var item in sale.Items)
+            {
+                using var cmdDetail = new SqliteCommand(detailQuery, connection, transaction);
+                cmdDetail.Parameters.AddWithValue("@SaleId", sale.Id.ToString());
+                cmdDetail.Parameters.AddWithValue("@ProductId", item.ProductId.ToString());
+                cmdDetail.Parameters.AddWithValue("@Barcode", item.Barcode);
+                cmdDetail.Parameters.AddWithValue("@ProductName", item.ProductName);
+                cmdDetail.Parameters.AddWithValue("@Quantity", item.Quantity);
+                cmdDetail.Parameters.AddWithValue("@PriceSold", item.UnitPrice);
+                cmdDetail.Parameters.AddWithValue("@UnitPrice", item.UnitPrice);
+                cmdDetail.Parameters.AddWithValue("@CostPrice", item.CostPrice);
+                cmdDetail.Parameters.AddWithValue("@Unit", item.Unit.ToString());
+                cmdDetail.ExecuteNonQuery();
+            }
+
+            InsertStockMovements(connection, transaction, movements);
+
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    public void SaveStockMovement(StockMovement movement)
+    {
+        SaveStockMovements(new[] { movement });
+    }
+
+    public void SaveStockMovements(IReadOnlyList<StockMovement> movements)
+    {
+        if (movements == null || movements.Count == 0)
+            return;
+
+        using var connection = _context.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            InsertStockMovements(connection, transaction, movements);
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    public void SaveBulkWithStockMovements(List<Product> products, IReadOnlyList<StockMovement> movements)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            string query = @"
+                INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
+                VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
+
+            foreach (var product in products)
+            {
+                using var command = new SqliteCommand(query, connection, transaction);
+                BindProductParameters(command, product);
+                command.ExecuteNonQuery();
+            }
+
+            InsertStockMovements(connection, transaction, movements);
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    public void UpdateWithStockMovement(Product product, StockMovement? movement)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            string query = @"
+                UPDATE Products
+                SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock,
+                    Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock
+                WHERE Id = @Id;";
+
+            using (var command = new SqliteCommand(query, connection, transaction))
+            {
+                BindProductParameters(command, product);
+                command.ExecuteNonQuery();
+            }
+
+            if (movement != null)
+                InsertStockMovements(connection, transaction, new[] { movement });
+
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    public void SaveWithStockMovement(Product product, StockMovement? movement)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            string query = @"
+                INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
+                VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
+
+            using (var command = new SqliteCommand(query, connection, transaction))
+            {
+                BindProductParameters(command, product);
+                command.ExecuteNonQuery();
+            }
+
+            if (movement != null)
+                InsertStockMovements(connection, transaction, new[] { movement });
+
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    public List<StockMovement> GetStockMovements(
+        Guid? productId,
+        DateTime? fromInclusive,
+        DateTime? toInclusive,
+        StockMovementKind? kind)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        var conditions = new List<string>();
+        if (productId.HasValue)
+            conditions.Add("ProductId = @ProductId");
+        if (fromInclusive.HasValue)
+            conditions.Add("datetime(OccurredAt) >= datetime(@From)");
+        if (toInclusive.HasValue)
+            conditions.Add("datetime(OccurredAt) <= datetime(@To)");
+        if (kind.HasValue)
+            conditions.Add("Kind = @Kind");
+
+        string where = conditions.Count > 0 ? " WHERE " + string.Join(" AND ", conditions) : string.Empty;
+
+        string query = $@"
+            SELECT Id, ProductId, Barcode, ProductName, OccurredAt, Kind,
+                   QuantityBefore, QuantityDelta, QuantityAfter, Actor, ReferenceId, Notes
+            FROM StockMovements
+            {where}
+            ORDER BY OccurredAt DESC, Id DESC;";
+
+        using var command = new SqliteCommand(query, connection);
+        if (productId.HasValue)
+            command.Parameters.AddWithValue("@ProductId", productId.Value.ToString());
+        if (fromInclusive.HasValue)
+            command.Parameters.AddWithValue("@From", fromInclusive.Value.ToString("yyyy-MM-dd HH:mm:ss"));
+        if (toInclusive.HasValue)
+            command.Parameters.AddWithValue("@To", toInclusive.Value.ToString("yyyy-MM-dd HH:mm:ss"));
+        if (kind.HasValue)
+            command.Parameters.AddWithValue("@Kind", StockMovement.ToKindCode(kind.Value));
+
+        var movements = new List<StockMovement>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Guid? referenceId = null;
+            if (!reader.IsDBNull(10) && !string.IsNullOrWhiteSpace(reader.GetString(10)))
+                referenceId = Guid.Parse(reader.GetString(10));
+
+            movements.Add(new StockMovement(
+                Guid.Parse(reader.GetString(0)),
+                Guid.Parse(reader.GetString(1)),
+                reader.GetString(2),
+                reader.GetString(3),
+                DateTime.Parse(reader.GetString(4)),
+                StockMovement.ParseKind(reader.GetString(5)),
+                Convert.ToDecimal(reader.GetValue(6)),
+                Convert.ToDecimal(reader.GetValue(7)),
+                Convert.ToDecimal(reader.GetValue(8)),
+                reader.GetString(9),
+                referenceId,
+                reader.IsDBNull(11) ? string.Empty : reader.GetString(11)));
+        }
+
+        return movements;
+    }
+
     public List<Sale> GetSalesHistory()
     {
         var sales = new List<Sale>();
@@ -608,6 +858,43 @@ public class SqliteProductRepository : IProductRepository
             unit,
             minStock,
             desiredStock);
+    }
+
+    private static void InsertStockMovements(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        IReadOnlyList<StockMovement> movements)
+    {
+        if (movements == null || movements.Count == 0)
+            return;
+
+        const string query = @"
+            INSERT INTO StockMovements (
+                Id, ProductId, Barcode, ProductName, OccurredAt, Kind,
+                QuantityBefore, QuantityDelta, QuantityAfter, Actor, ReferenceId, Notes)
+            VALUES (
+                @Id, @ProductId, @Barcode, @ProductName, @OccurredAt, @Kind,
+                @QuantityBefore, @QuantityDelta, @QuantityAfter, @Actor, @ReferenceId, @Notes);";
+
+        foreach (var movement in movements)
+        {
+            using var command = new SqliteCommand(query, connection, transaction);
+            command.Parameters.AddWithValue("@Id", movement.Id.ToString());
+            command.Parameters.AddWithValue("@ProductId", movement.ProductId.ToString());
+            command.Parameters.AddWithValue("@Barcode", movement.Barcode);
+            command.Parameters.AddWithValue("@ProductName", movement.ProductName);
+            command.Parameters.AddWithValue("@OccurredAt", movement.OccurredAt.ToString("yyyy-MM-dd HH:mm:ss"));
+            command.Parameters.AddWithValue("@Kind", movement.KindCode);
+            command.Parameters.AddWithValue("@QuantityBefore", movement.QuantityBefore);
+            command.Parameters.AddWithValue("@QuantityDelta", movement.QuantityDelta);
+            command.Parameters.AddWithValue("@QuantityAfter", movement.QuantityAfter);
+            command.Parameters.AddWithValue("@Actor", movement.Actor);
+            command.Parameters.AddWithValue(
+                "@ReferenceId",
+                movement.ReferenceId.HasValue ? movement.ReferenceId.Value.ToString() : DBNull.Value);
+            command.Parameters.AddWithValue("@Notes", movement.Notes);
+            command.ExecuteNonQuery();
+        }
     }
 
     private static void BindProductParameters(SqliteCommand command, Product product)

@@ -17,7 +17,7 @@ public class ProcessSaleUseCase
         _productRepository = productRepository;
     }
 
-    public void Execute(
+    public Sale Execute(
         List<SaleItemDto> items,
         string paymentMethod,
         string cardReference,
@@ -27,8 +27,11 @@ public class ProcessSaleUseCase
         if (items == null || items.Count == 0)
             throw new ArgumentException("No hay productos en el carrito para realizar la venta.");
 
-        var productsToUpdate = new List<(Product Product, decimal Quantity)>();
+        var productsToUpdate = new List<Product>();
         var saleItems = new List<SaleItem>();
+        var movements = new List<StockMovement>();
+        var saleId = Guid.NewGuid();
+        var occurredAt = DateTime.Now;
 
         foreach (var item in items)
         {
@@ -36,8 +39,9 @@ public class ProcessSaleUseCase
             if (product == null)
                 throw new KeyNotFoundException($"El producto con código '{item.Barcode}' no existe.");
 
+            decimal before = product.Stock;
             product.RecordSale(item.Quantity);
-            productsToUpdate.Add((product, item.Quantity));
+            productsToUpdate.Add(product);
 
             saleItems.Add(new SaleItem(
                 product.Id,
@@ -48,21 +52,28 @@ public class ProcessSaleUseCase
                 product.CostPrice,
                 product.Unit
             ));
-        }
 
-        foreach (var (product, _) in productsToUpdate)
-        {
-            _productRepository.Update(product);
+            movements.Add(StockMovementFactory.Create(
+                product,
+                StockMovementKind.Venta,
+                before,
+                -item.Quantity,
+                product.Stock,
+                saleId,
+                notes: string.Empty,
+                occurredAt: occurredAt));
         }
 
         var sale = new Sale(
-            Guid.NewGuid(),
-            DateTime.Now,
+            saleId,
+            occurredAt,
             saleItems,
             paymentMethod,
             cardReference,
             amountReceived,
             cardAmount);
-        _productRepository.SaveSale(sale);
+
+        _productRepository.SaveSaleWithInventory(sale, productsToUpdate, movements);
+        return sale;
     }
 }
