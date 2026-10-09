@@ -27,6 +27,7 @@ public sealed class PeripheralSettings
     public ScannerMode ScannerMode { get; init; } = ScannerMode.Keyboard;
     public string ScannerSerialPort { get; init; } = string.Empty;
     public int ScannerBaudRate { get; init; } = 9600;
+    public bool ScannerAddToCart { get; init; } = true;
 
     public bool HasPrinterConfigured => PrinterTransport switch
     {

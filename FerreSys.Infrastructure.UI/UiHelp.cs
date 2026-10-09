@@ -285,7 +285,9 @@ internal static class SectionHelpText
 
     public const string PeripheralsPrinter =
         "Impresora térmica ESC/POS.\n\n" +
-        "• Windows: impresoras USB instaladas en el equipo.\n" +
+        "• Windows: colas con controlador instalado. Actualizar vuelve a leerlas.\n" +
+        "• Una térmica Bluetooth (como la MP210) no entra ahí si Windows dice que el controlador no está disponible. FerreSys la muestra como Bluetooth y la usa por su puerto COM.\n" +
+        "• Si sale «controlador no disponible», instala el controlador en Impresoras y escáneres y pulsa Actualizar.\n" +
         "• COM: puerto serie directo.\n" +
         "• Red: IP y puerto 9100 (raw).\n\n" +
         "Probar impresión envía un ticket de prueba. Probar cajón envía el pulso RJ11.";
@@ -293,7 +295,9 @@ internal static class SectionHelpText
     public const string PeripheralsScanner =
         "Escáner de códigos.\n\n" +
         "• Teclado: el USB escribe en el buscador del mostrador (modo HID).\n" +
-        "• Serie: FerreSys lee el puerto COM y añade el producto al carrito.\n\n" +
+        "• Serie: FerreSys lee el puerto COM.\n" +
+        "• Al escanear, agregar al carrito: cada lectura suma 1 a la cantidad. Si está apagado, solo busca.\n" +
+        "• Cada lectura reemplaza el código anterior para que no se duplique.\n\n" +
         "Probar lectura muestra el último código recibido.";
 
     public const string KardexList =

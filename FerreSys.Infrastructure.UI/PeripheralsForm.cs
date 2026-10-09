@@ -21,6 +21,7 @@ public sealed class PeripheralsForm : Form
     private RadioButton rbSerial = null!;
     private ComboBox cmbScannerPort = null!;
     private ComboBox cmbScannerBaud = null!;
+    private CheckBox chkScannerAddToCart = null!;
     private Label lblLastScan = null!;
 
     private SerialBarcodeScanner? _testScanner;
@@ -38,7 +39,7 @@ public sealed class PeripheralsForm : Form
     private void BuildUi()
     {
         Text = "Periféricos e impresión - FerreSys";
-        Size = new Size(640, 520);
+        Size = new Size(640, 560);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -92,6 +93,25 @@ public sealed class PeripheralsForm : Form
         cmbTransport.SelectedIndexChanged += (_, _) => UpdateTransportState();
 
         cmbWindowsPrinter = DropDown();
+        cmbWindowsPrinter.SelectedIndexChanged += (_, _) => OnWindowsPrinterChanged();
+        var btnRefreshPrinters = new Button { Text = "Actualizar", Width = 96, Height = 28, Font = UiTheme.Ui, Margin = new Padding(8, 2, 0, 0) };
+        btnRefreshPrinters.Click += (_, _) => RefreshDevices(keepSelection: true);
+        var printerPicker = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        cmbWindowsPrinter.Dock = DockStyle.None;
+        cmbWindowsPrinter.Width = 300;
+        printerPicker.Controls.Add(cmbWindowsPrinter);
+        printerPicker.Controls.Add(btnRefreshPrinters);
+        printerPicker.Resize += (_, _) =>
+        {
+            cmbWindowsPrinter.Width = Math.Max(120, printerPicker.ClientSize.Width - btnRefreshPrinters.Width - 12);
+        };
         cmbPrinterPort = DropDown();
         cmbPrinterBaud = BaudCombo();
         txtHost = Field();
@@ -130,7 +150,7 @@ public sealed class PeripheralsForm : Form
         actions.Controls.AddRange([btnRefresh, btnTest, btnDrawer]);
 
         AddRow(grid, 0, "Conexión", cmbTransport);
-        AddRow(grid, 1, "Impresora Windows", cmbWindowsPrinter);
+        AddRow(grid, 1, "Impresora Windows", printerPicker);
         AddRow(grid, 2, "Puerto COM", cmbPrinterPort);
         AddRow(grid, 3, "Velocidad (baudios)", cmbPrinterBaud);
         AddRow(grid, 4, "IP o nombre", txtHost);
@@ -152,12 +172,13 @@ public sealed class PeripheralsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 5,
+            RowCount = 6,
             Padding = new Padding(8, 16, 8, 8),
             BackColor = UiTheme.PanelBg
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
@@ -174,6 +195,13 @@ public sealed class PeripheralsForm : Form
 
         cmbScannerPort = DropDown();
         cmbScannerBaud = BaudCombo();
+        chkScannerAddToCart = new CheckBox
+        {
+            Text = "Al escanear, agregar al carrito",
+            Dock = DockStyle.Fill,
+            Checked = true,
+            Font = UiTheme.Ui
+        };
         lblLastScan = new Label
         {
             Text = "Última lectura: —",
@@ -187,8 +215,9 @@ public sealed class PeripheralsForm : Form
         AddRow(grid, 0, "Modo", modes);
         AddRow(grid, 1, "Puerto COM", cmbScannerPort);
         AddRow(grid, 2, "Velocidad (baudios)", cmbScannerBaud);
-        AddRow(grid, 3, "", btnListen);
-        AddRow(grid, 4, "Resultado", lblLastScan);
+        AddRow(grid, 3, "Al leer", chkScannerAddToCart);
+        AddRow(grid, 4, "", btnListen);
+        AddRow(grid, 5, "Resultado", lblLastScan);
 
         gb.Controls.Add(grid);
         page.Controls.Add(gb);
@@ -223,7 +252,7 @@ public sealed class PeripheralsForm : Form
 
         SelectChoice(cmbTransport, devices.PrinterTransport);
         SelectText(cmbWindowsPrinter, devices.WindowsPrinterName);
-        SelectText(cmbPrinterPort, devices.PrinterSerialPort);
+        SelectPort(cmbPrinterPort, devices.PrinterSerialPort);
         SelectText(cmbPrinterBaud, devices.PrinterBaudRate.ToString());
         txtHost.Text = devices.NetworkHost;
         numPort.Value = devices.NetworkPort is >= 1 and <= 65535 ? devices.NetworkPort : 9100;
@@ -232,19 +261,29 @@ public sealed class PeripheralsForm : Form
 
         rbSerial.Checked = devices.ScannerMode == ScannerMode.Serial;
         rbKeyboard.Checked = devices.ScannerMode != ScannerMode.Serial;
-        SelectText(cmbScannerPort, devices.ScannerSerialPort);
+        SelectPort(cmbScannerPort, devices.ScannerSerialPort);
         SelectText(cmbScannerBaud, devices.ScannerBaudRate.ToString());
+        chkScannerAddToCart.Checked = devices.ScannerAddToCart;
     }
 
     private void RefreshDevices(bool keepSelection)
     {
         string? printer = keepSelection ? cmbWindowsPrinter.Text : null;
-        string? printerPort = keepSelection ? cmbPrinterPort.Text : null;
-        string? scannerPort = keepSelection ? cmbScannerPort.Text : null;
+        string? printerPort = keepSelection ? PeripheralDiscovery.PortNameOf(cmbPrinterPort.Text) : null;
+        string? scannerPort = keepSelection ? PeripheralDiscovery.PortNameOf(cmbScannerPort.Text) : null;
 
-        Fill(cmbWindowsPrinter, PeripheralDiscovery.InstalledPrinters(), printer);
-        Fill(cmbPrinterPort, PeripheralDiscovery.SerialPorts(), printerPort);
-        Fill(cmbScannerPort, PeripheralDiscovery.SerialPorts(), scannerPort);
+        Fill(cmbWindowsPrinter, PeripheralDiscovery.PrinterChoices(), printer);
+        FillPorts(cmbPrinterPort, printerPort);
+        FillPorts(cmbScannerPort, scannerPort);
+    }
+
+    private void OnWindowsPrinterChanged()
+    {
+        if (!PeripheralDiscovery.TryGetBluetoothPort(cmbWindowsPrinter.Text, out string port))
+            return;
+
+        SelectChoice(cmbTransport, PrinterTransport.Serial);
+        SelectPort(cmbPrinterPort, port);
     }
 
     private void UpdateTransportState()
@@ -272,6 +311,18 @@ public sealed class PeripheralsForm : Form
         if (devices.PrinterTransport == PrinterTransport.Windows && string.IsNullOrWhiteSpace(devices.WindowsPrinterName))
         {
             MessageBox.Show("Selecciona la impresora de Windows.", "Impresora", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (devices.PrinterTransport == PrinterTransport.Windows && PeripheralDiscovery.HasMissingDriver(devices.WindowsPrinterName))
+        {
+            MessageBox.Show(
+                "Windows ve ese equipo, pero no tiene controlador de impresión, así que FerreSys no puede enviarle tickets.\n\n" +
+                "En Configuración > Bluetooth y dispositivos > Impresoras y escáneres abre la impresora e instala el controlador. " +
+                "Si está activo el Modo de impresión protegida, Windows bloquea los controladores de térmicas: desactívalo, instala el de la impresora y pulsa Actualizar.",
+                "Impresora",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
             return;
         }
 
@@ -323,6 +374,16 @@ public sealed class PeripheralsForm : Form
             if (!devices.HasPrinterConfigured)
             {
                 MessageBox.Show("Configura la conexión de la impresora antes de probar.", "Impresora", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (PeripheralDiscovery.HasMissingDriver(devices.WindowsPrinterName))
+            {
+                MessageBox.Show(
+                    "Esa impresora no tiene controlador en Windows. Instálalo en Impresoras y escáneres y pulsa Actualizar.",
+                    "Impresora",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
                 return;
             }
 
@@ -401,15 +462,16 @@ public sealed class PeripheralsForm : Form
     {
         PrinterTransport = Selected(cmbTransport, PrinterTransport.None),
         WindowsPrinterName = cmbWindowsPrinter.Text.Trim(),
-        PrinterSerialPort = cmbPrinterPort.Text.Trim(),
+        PrinterSerialPort = PeripheralDiscovery.PortNameOf(cmbPrinterPort.Text),
         PrinterBaudRate = SelectedBaud(cmbPrinterBaud),
         NetworkHost = txtHost.Text.Trim(),
         NetworkPort = (int)numPort.Value,
         OpenDrawerOnCash = chkDrawer.Checked,
         DrawerPin = Selected(cmbDrawerPin, 0),
         ScannerMode = rbSerial.Checked ? ScannerMode.Serial : ScannerMode.Keyboard,
-        ScannerSerialPort = cmbScannerPort.Text.Trim(),
-        ScannerBaudRate = SelectedBaud(cmbScannerBaud)
+        ScannerSerialPort = PeripheralDiscovery.PortNameOf(cmbScannerPort.Text),
+        ScannerBaudRate = SelectedBaud(cmbScannerBaud),
+        ScannerAddToCart = chkScannerAddToCart.Checked
     };
 
     private static TextBox Field() => new() { Dock = DockStyle.Fill, Font = UiTheme.Ui };
@@ -450,6 +512,33 @@ public sealed class PeripheralsForm : Form
         if (!string.IsNullOrWhiteSpace(preferred) && !combo.Items.Contains(preferred))
             combo.Items.Insert(0, preferred);
         SelectText(combo, preferred);
+    }
+
+    private static void FillPorts(ComboBox combo, string? preferredPort)
+    {
+        Fill(combo, PeripheralDiscovery.SerialPortChoices(), null);
+        SelectPort(combo, preferredPort);
+    }
+
+    private static void SelectPort(ComboBox combo, string? port)
+    {
+        if (string.IsNullOrWhiteSpace(port))
+        {
+            if (combo.Items.Count > 0 && combo.SelectedIndex < 0)
+                combo.SelectedIndex = 0;
+            return;
+        }
+
+        for (int i = 0; i < combo.Items.Count; i++)
+        {
+            if (string.Equals(PeripheralDiscovery.PortNameOf(combo.Items[i]?.ToString()), port, StringComparison.OrdinalIgnoreCase))
+            {
+                combo.SelectedIndex = i;
+                return;
+            }
+        }
+
+        SelectText(combo, port);
     }
 
     private static void SelectText(ComboBox combo, string? text)

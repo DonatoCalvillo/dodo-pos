@@ -58,6 +58,7 @@ public partial class Form1 : Form
     private readonly SqliteAppSettingsStore _appSettings;
     private readonly PrintSaleTicketUseCase _printSaleTicketUseCase;
     private SerialBarcodeScanner? _serialScanner;
+    private string? _lastScanCode;
     private decimal _saleTotal = 0;
 
     public Form1()
@@ -300,7 +301,7 @@ public partial class Form1 : Form
             TextAlign = ContentAlignment.TopLeft,
             Text = "• Doble clic: añadir al carrito\r\n" +
                    "• Clic derecho: editar / auditar stock\r\n" +
-                   "• Enter: añadir si hay 1 resultado\r\n" +
+                   "• Enter: 1 resultado; suma al carrito si el escáner lo tiene activo\r\n" +
                    "• F5: cobrar venta",
             Padding = new Padding(6, 4, 4, 4)
         };
@@ -806,6 +807,9 @@ public partial class Form1 : Form
     private void TxtBuscador_TextChanged(object? sender, EventArgs e)
     {
         string term = txtBuscador.Text.Trim();
+        if (TryKeepLatestScan(term))
+            return;
+
         dgvSearch.Rows.Clear();
 
         if (term.Length > 0)
@@ -828,11 +832,52 @@ public partial class Form1 : Form
 
     private void TxtBuscador_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.KeyCode == Keys.Enter && dgvSearch.Rows.Count == 1)
-        {
+        if (e.KeyCode != Keys.Enter)
+            return;
+
+        e.SuppressKeyPress = true;
+        e.Handled = true;
+        ApplyScannedCode(txtBuscador.Text);
+    }
+
+    private bool TryKeepLatestScan(string term)
+    {
+        if (_lastScanCode is not { Length: > 0 } previous
+            || term.Length <= previous.Length
+            || !term.StartsWith(previous, StringComparison.Ordinal))
+            return false;
+
+        string suffix = term[previous.Length..].Trim();
+        if (suffix.Length == 0)
+            return false;
+
+        txtBuscador.Text = suffix;
+        txtBuscador.SelectionStart = txtBuscador.Text.Length;
+        return true;
+    }
+
+    private void ApplyScannedCode(string raw)
+    {
+        string code = raw.Trim();
+        _lastScanCode = code.Length > 0 ? code : null;
+
+        if (code.Length > 0 && !string.Equals(txtBuscador.Text.Trim(), code, StringComparison.Ordinal))
+            txtBuscador.Text = code;
+
+        if (code.Length > 0 && ScannerAddsToCart() && dgvSearch.Rows.Count == 1)
             AddToCart(dgvSearch.Rows[0]);
-            e.SuppressKeyPress = true;
-        }
+
+        PrepareNextScan();
+    }
+
+    private bool ScannerAddsToCart() =>
+        _appSettings.GetPeripheralSettings().ScannerAddToCart;
+
+    private void PrepareNextScan()
+    {
+        txtBuscador.Focus();
+        if (txtBuscador.TextLength > 0)
+            txtBuscador.SelectAll();
     }
 
     private void DgvSearch_DoubleClick(object? sender, EventArgs e)
@@ -1243,10 +1288,7 @@ public partial class Form1 : Form
         if (OwnedForms.Any(form => form.Visible))
             return;
 
-        txtBuscador.Text = code.Trim();
-        txtBuscador.Focus();
-        if (dgvSearch.Rows.Count == 1)
-            AddToCart(dgvSearch.Rows[0]);
+        ApplyScannedCode(code);
     }
 
     private void StopSerialScanner()

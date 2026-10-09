@@ -103,7 +103,8 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
             DrawerPin = ParseInt(Get(values, "printer.drawerPin", "0"), 0) == 1 ? 1 : 0,
             ScannerMode = ParseEnum(Get(values, "scanner.mode", nameof(ScannerMode.Keyboard)), ScannerMode.Keyboard),
             ScannerSerialPort = Get(values, "scanner.serialPort", string.Empty),
-            ScannerBaudRate = ParseInt(Get(values, "scanner.baudRate", "9600"), 9600)
+            ScannerBaudRate = ParseInt(Get(values, "scanner.baudRate", "9600"), 9600),
+            ScannerAddToCart = Get(values, "scanner.addToCart", "1") != "0"
         };
     }
 
@@ -122,7 +123,8 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
             ["printer.drawerPin"] = settings.DrawerPin == 1 ? "1" : "0",
             ["scanner.mode"] = settings.ScannerMode.ToString(),
             ["scanner.serialPort"] = settings.ScannerSerialPort.Trim(),
-            ["scanner.baudRate"] = settings.ScannerBaudRate.ToString(CultureInfo.InvariantCulture)
+            ["scanner.baudRate"] = settings.ScannerBaudRate.ToString(CultureInfo.InvariantCulture),
+            ["scanner.addToCart"] = settings.ScannerAddToCart ? "1" : "0"
         });
     }
 
