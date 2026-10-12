@@ -65,7 +65,8 @@ public class SqliteDbContext
             Stock REAL NOT NULL,
             Unit TEXT NOT NULL DEFAULT 'Pieza',
             MinStock REAL NOT NULL DEFAULT 0,
-            DesiredStock REAL NOT NULL DEFAULT 0
+            DesiredStock REAL NOT NULL DEFAULT 0,
+            IsActive INTEGER NOT NULL DEFAULT 1
         );
         CREATE INDEX IF NOT EXISTS idx_products_barcode ON Products(Barcode);
 
@@ -148,6 +149,7 @@ public class SqliteDbContext
         EnsureSaleDetailPriceColumns(connection);
         EnsureProductUnitColumn(connection);
         EnsureProductReorderColumns(connection);
+        EnsureProductIsActiveColumn(connection);
         EnsureSaleDetailUnitColumn(connection);
         EnsureCashCloseReportColumns(connection);
     }
@@ -295,6 +297,29 @@ public class SqliteDbContext
                 connection);
             alter.ExecuteNonQuery();
         }
+    }
+
+    private static void EnsureProductIsActiveColumn(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(Products);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        if (!columns.Contains("IsActive"))
+        {
+            using var alter = new SqliteCommand(
+                "ALTER TABLE Products ADD COLUMN IsActive INTEGER NOT NULL DEFAULT 1;",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+
+        using var index = new SqliteCommand(
+            "CREATE INDEX IF NOT EXISTS IX_Products_IsActive ON Products (IsActive);",
+            connection);
+        index.ExecuteNonQuery();
     }
 
     private static void EnsureSaleDetailUnitColumn(SqliteConnection connection)

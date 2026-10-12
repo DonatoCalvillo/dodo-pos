@@ -1,12 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
+    <ItemGroup>
     <ProjectReference Include="..\FerreSys.Application\FerreSys.Application.csproj" />
     <ProjectReference Include="..\FerreSys.Infrastructure.Persistence\FerreSys.Infrastructure.Persistence.csproj" />
+    <ProjectReference Include="..\FerreSys.Licensing\FerreSys.Licensing.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+    <PackageReference Include="Velopack" Version="0.0.1298" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -15,6 +17,14 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\dodo.ico</ApplicationIcon>
+    <AssemblyName>FerreSys</AssemblyName>
+    <Version>0.1.0</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\dodo_dark.png" LogicalName="FerreSys.Infrastructure.UI.Assets.dodo_dark.png" />
+    <EmbeddedResource Include="Assets\dodo.ico" LogicalName="FerreSys.Infrastructure.UI.Assets.dodo.ico" />
+  </ItemGroup>
 
 </Project>

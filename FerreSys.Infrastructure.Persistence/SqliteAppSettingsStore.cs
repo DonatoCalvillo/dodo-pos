@@ -108,6 +108,35 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
         };
     }
 
+    public bool IsSeedOfferCompleted()
+    {
+        var values = ReadAll();
+        return Get(values, "SeedOfferCompleted", "0") == "1";
+    }
+
+    public void MarkSeedOfferCompleted()
+    {
+        Write(new Dictionary<string, string>
+        {
+            ["SeedOfferCompleted"] = "1"
+        });
+    }
+
+    public string? GetLicenseKey()
+    {
+        var values = ReadAll();
+        string license = Get(values, "license.key", string.Empty).Trim();
+        return license.Length == 0 ? null : license;
+    }
+
+    public void SaveLicenseKey(string licenseKey)
+    {
+        Write(new Dictionary<string, string>
+        {
+            ["license.key"] = licenseKey.Trim()
+        });
+    }
+
     public void SavePeripheralSettings(PeripheralSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);

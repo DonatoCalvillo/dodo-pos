@@ -29,6 +29,9 @@ public class Product
     // Target / maximum stock used for purchase suggestions
     public decimal DesiredStock { get; private set; }
 
+    // Logical delete: hidden from the counter, kept for past sales
+    public bool IsActive { get; private set; }
+
     public Product(
         Guid id,
         string barcode,
@@ -38,7 +41,8 @@ public class Product
         decimal stock,
         UnitOfMeasure unit = UnitOfMeasure.Pieza,
         decimal minStock = 0m,
-        decimal desiredStock = 0m)
+        decimal desiredStock = 0m,
+        bool isActive = true)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("El nombre del producto no puede estar vacío.");
@@ -71,7 +75,10 @@ public class Product
         Unit = unit;
         MinStock = minStock;
         DesiredStock = desiredStock;
+        IsActive = isActive;
     }
+
+    public void Deactivate() => IsActive = false;
 
     public bool IsOutOfStock => Stock <= 0m;
 

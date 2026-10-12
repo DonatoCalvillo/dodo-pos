@@ -1,3 +1,5 @@
+using Velopack;
+
 namespace FerreSys.Infrastructure.UI;
 
 static class Program
@@ -6,11 +8,11 @@ static class Program
     ///  The main entry point for the application.
     /// </summary>
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
-        // To customize application configuration such as set high DPI settings or default font,
-        // see https://aka.ms/applicationconfiguration.
+        VelopackApp.Build().Run();
+
         ApplicationConfiguration.Initialize();
-        System.Windows.Forms.Application.Run(new Form1());
-    }    
+        System.Windows.Forms.Application.Run(new Form1(args));
+    }
 }

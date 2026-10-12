@@ -1,4 +1,5 @@
 using FerreSys.Application;
+using FerreSys.Infrastructure.Persistence;
 
 namespace FerreSys.Infrastructure.UI;
 
@@ -13,6 +14,8 @@ public class CashCloseForm : Form
     private readonly GetDailyCashSummaryUseCase _getDailyCashSummaryUseCase;
     private readonly SaveOpeningCashUseCase _saveOpeningCashUseCase;
     private readonly CloseCashDayUseCase _closeCashDayUseCase;
+    private readonly CloudBackupService? _cloudBackup;
+    private readonly string? _premiumLicenseId;
     private readonly CashCutMode _mode;
 
     private DateTimePicker dtpDate = null!;
@@ -50,12 +53,16 @@ public class CashCloseForm : Form
         GetDailyCashSummaryUseCase getDailyCashSummaryUseCase,
         SaveOpeningCashUseCase saveOpeningCashUseCase,
         CloseCashDayUseCase closeCashDayUseCase,
-        CashCutMode mode)
+        CashCutMode mode,
+        CloudBackupService? cloudBackup = null,
+        string? premiumLicenseId = null)
     {
         _getDailyCashSummaryUseCase = getDailyCashSummaryUseCase;
         _saveOpeningCashUseCase = saveOpeningCashUseCase;
         _closeCashDayUseCase = closeCashDayUseCase;
         _mode = mode;
+        _cloudBackup = cloudBackup;
+        _premiumLicenseId = premiumLicenseId;
         InitializeComponent();
         LoadDay();
     }
@@ -690,6 +697,8 @@ public class CashCloseForm : Form
             var report = _closeCashDayUseCase.Execute(dtpDate.Value, numCounted.Value);
             LoadDay();
             ApplyDifferenceLabel(lblDifference, report.Difference);
+            if (_cloudBackup != null)
+                _ = _cloudBackup.EnqueueAndUploadAsync(_premiumLicenseId);
             MessageBox.Show(
                 updating
                     ? $"Corte Z actualizado. {FormatDifferenceLine(report.Difference)}"

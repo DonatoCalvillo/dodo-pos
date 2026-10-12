@@ -30,6 +30,7 @@ public partial class Form1 : Form
     private ToolStripButton btnKardex = null!;
     private ToolStripButton btnImportExcel = null!;
     private ToolStripStatusLabel lblStockAlerts = null!;
+    private ToolStripLabel lblBrand = null!;
 
     private readonly List<CartSession> _cartSessions = [];
     private int _activeSessionIndex;
@@ -55,14 +56,18 @@ public partial class Form1 : Form
     private ContextMenuStrip cmsSearchMenu = null!;
     private readonly ImportProductsUseCase _importProductsUseCase;
     private readonly AdjustStockUseCase _adjustStockUseCase;
+    private readonly DeactivateProductUseCase _deactivateProductUseCase;
+    private readonly string[] _startupArgs;
     private readonly SqliteAppSettingsStore _appSettings;
+    private readonly CloudBackupService _cloudBackup;
     private readonly PrintSaleTicketUseCase _printSaleTicketUseCase;
     private SerialBarcodeScanner? _serialScanner;
     private string? _lastScanCode;
     private decimal _saleTotal = 0;
 
-    public Form1()
+    public Form1(string[]? startupArgs = null)
     {
+        _startupArgs = startupArgs ?? [];
         _dbContext = new SqliteDbContext();
         _productRepository = new SqliteProductRepository(_dbContext);
         _subscriptionService = new LocalSubscriptionService();
@@ -80,7 +85,9 @@ public partial class Form1 : Form
         _updateProductUseCase = new UpdateProductUseCase(_productRepository);
         _importProductsUseCase = new ImportProductsUseCase(_productRepository, _subscriptionService);
         _adjustStockUseCase = new AdjustStockUseCase(_productRepository);
+        _deactivateProductUseCase = new DeactivateProductUseCase(_productRepository);
         _appSettings = new SqliteAppSettingsStore(_dbContext);
+        _cloudBackup = new CloudBackupService(_dbContext, new UnconfiguredCloudBackupStore());
         _printSaleTicketUseCase = new PrintSaleTicketUseCase();
 
         // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
@@ -95,6 +102,7 @@ public partial class Form1 : Form
         this.WindowState = FormWindowState.Maximized;
 
         // Mantenemos activo el KeyPreview para que escuche el teclado de forma global
+        this.Icon = Branding.AppIcon;
         this.KeyPreview = true;
         this.KeyDown += Form1_KeyDown;
         this.FormClosing += Form1_FormClosing;
@@ -222,7 +230,7 @@ public partial class Form1 : Form
         var btnPeripherals = CreateToolItem("Periféricos", UiIcons.Printer());
         btnPeripherals.Click += (_, _) => OpenPeripherals();
 
-        var brand = new ToolStripLabel("  FerreSys — Punto de Venta")
+        lblBrand = new ToolStripLabel(BrandCaption())
         {
             Font = new Font("Tahoma", 11f, FontStyle.Bold),
             ForeColor = UiTheme.GroupTitle
@@ -241,7 +249,7 @@ public partial class Form1 : Form
             btnBusiness,
             btnPeripherals,
             new ToolStripSeparator(),
-            brand
+            lblBrand
         ]);
 
         return strip;
@@ -555,7 +563,13 @@ public partial class Form1 : Form
         status.Items.Add(lblStockAlerts);
         status.Items.Add(connected);
         status.Items.Add(new ToolStripStatusLabel("Mostrador") { BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched });
-        status.Items.Add(new ToolStripStatusLabel("FerreSys MVP") { BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched });
+        status.Items.Add(new ToolStripStatusLabel("Powered by Do&&Do")
+        {
+            Image = Branding.Mark,
+            TextImageRelation = TextImageRelation.ImageBeforeText,
+            BorderSides = ToolStripStatusLabelBorderSides.Left,
+            BorderStyle = Border3DStyle.Etched
+        });
 
         return status;
     }
@@ -682,7 +696,9 @@ public partial class Form1 : Form
             _getDailyCashSummaryUseCase,
             _saveOpeningCashUseCase,
             _closeCashDayUseCase,
-            mode);
+            mode,
+            _cloudBackup,
+            _subscriptionService.PremiumLicenseId);
         f.ShowDialog();
     }
 
@@ -707,7 +723,61 @@ public partial class Form1 : Form
             return;
 
         _openingCashPromptShown = true;
+        OfferSeedCatalogIfNeeded();
         PromptOpeningCashIfNeeded();
+        _ = _cloudBackup.TryUploadPendingAsync();
+        _ = TryRenewLicenseAsync();
+        _ = AppUpdateService.CheckSilentlyAsync();
+    }
+
+    private async Task TryRenewLicenseAsync()
+    {
+        if (string.IsNullOrWhiteSpace(LicenseApiSettings.BaseUrl))
+            return;
+
+        try
+        {
+            using var client = new FerreSys.Licensing.LicenseApiClient(LicenseApiSettings.BaseUrl);
+            await _subscriptionService.TryRenewAsync(client);
+        }
+        catch
+        {
+            // Sin red, el periodo de gracia de la licencia local sigue aplicando.
+        }
+    }
+
+    private void OfferSeedCatalogIfNeeded()
+    {
+        if (_appSettings.IsSeedOfferCompleted())
+            return;
+
+        if (_productRepository.GetTotalCount() > 0)
+        {
+            _appSettings.MarkSeedOfferCompleted();
+            return;
+        }
+
+        bool loadCatalog = ResolveSeedChoice();
+        if (loadCatalog)
+        {
+            int loaded = HardwareSeedCatalog.ApplyIfEmpty(_productRepository);
+            SetStatus($"Catálogo inicial cargado: {loaded} productos");
+            lblStatus.ForeColor = UiTheme.StatusOk;
+        }
+
+        _appSettings.MarkSeedOfferCompleted();
+    }
+
+    private bool ResolveSeedChoice()
+    {
+        if (_startupArgs.Any(arg => string.Equals(arg, "--with-seed", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (_startupArgs.Any(arg => string.Equals(arg, "--no-seed", StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        using var offer = new SeedOfferForm();
+        return offer.ShowDialog(this) == DialogResult.OK && offer.LoadSampleCatalog;
     }
 
     private void PromptOpeningCashIfNeeded()
@@ -743,9 +813,14 @@ public partial class Form1 : Form
         var menuKardex = new ToolStripMenuItem { Text = "Ver Kárdex" };
         menuKardex.Click += MenuKardex_Click;
 
+        var menuHide = new ToolStripMenuItem { Text = "Quitar del mostrador" };
+        menuHide.Click += MenuHide_Click;
+
         cmsSearchMenu.Items.Add(menuEdit);
         cmsSearchMenu.Items.Add(menuAudit);
         cmsSearchMenu.Items.Add(menuKardex);
+        cmsSearchMenu.Items.Add(new ToolStripSeparator());
+        cmsSearchMenu.Items.Add(menuHide);
         dgvSearch.ContextMenuStrip = cmsSearchMenu;
 
         dgvSearch.CellMouseDown += (s, e) =>
@@ -1233,8 +1308,17 @@ public partial class Form1 : Form
 
     private void OpenBusinessProfile()
     {
-        using var form = new BusinessProfileForm(_appSettings);
-        form.ShowDialog(this);
+        using var form = new BusinessProfileForm(_appSettings, _subscriptionService);
+        if (form.ShowDialog(this) == DialogResult.OK)
+            lblBrand.Text = BrandCaption();
+    }
+
+    private string BrandCaption()
+    {
+        string name = _appSettings.GetTicketProfile().BusinessName.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Equals("FERRETERÍA EL MVP", StringComparison.OrdinalIgnoreCase))
+            return "  FerreSys — Punto de Venta";
+        return "  " + name;
     }
 
     private void OpenPeripherals()
@@ -1320,6 +1404,8 @@ public partial class Form1 : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
         }
+
+        _cloudBackup.TryEnqueuePackage(_subscriptionService.PremiumLicenseId);
     }
 
     private void Form1_KeyDown(object? sender, KeyEventArgs e)
@@ -1544,6 +1630,37 @@ public partial class Form1 : Form
                     RefreshStockAlerts();
                 }
             }
+        }
+    }
+
+    private void MenuHide_Click(object? sender, EventArgs e)
+    {
+        if (dgvSearch.CurrentRow == null)
+            return;
+
+        string barcode = CellText(dgvSearch.CurrentRow, "Barcode");
+        var product = _productRepository.GetByBarcode(barcode);
+        if (product == null || !product.IsActive)
+            return;
+
+        var confirm = MessageBox.Show(
+            $"¿Quitar \"{product.Name}\" del mostrador?\n\nDejará de aparecer en búsquedas y en el lector. Las ventas anteriores se conservan.",
+            "Quitar del mostrador",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (confirm != DialogResult.Yes)
+            return;
+
+        try
+        {
+            _deactivateProductUseCase.Execute(product.Id);
+            TxtBuscador_TextChanged(this, EventArgs.Empty);
+            SetStatus("Producto oculto del mostrador");
+            RefreshStockAlerts();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "No se pudo ocultar el producto", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

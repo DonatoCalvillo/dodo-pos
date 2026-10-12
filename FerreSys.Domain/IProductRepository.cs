@@ -17,6 +17,11 @@ public interface IProductRepository
     // Update stock levels after a transaction
     void Update(Product product);
 
+    /// <summary>
+    /// Hides a product from the counter without deleting the row.
+    /// </summary>
+    void Deactivate(Guid productId);
+
     void SaveSale(Sale sale);
 
     /// <summary>

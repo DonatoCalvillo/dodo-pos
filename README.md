@@ -26,14 +26,63 @@ ferresys/
 ├── FerreSys.Application/                 # Casos de uso
 ├── FerreSys.Infrastructure.Persistence/  # SQLite
 ├── FerreSys.Infrastructure.UI/           # WinForms (ejecutable)
+├── FerreSys.Licensing/                   # Validación RSA de la licencia
+├── FerreSys.LicenseIssuer/               # Emite archivos .lic (no se instala en la ferretería)
 ├── Directory.Build.props                 # Versión de la aplicación
-├── scripts/publish.ps1                   # Empaquetado
+├── build-release.ps1                     # Instalador Velopack para clientes
+├── scripts/publish.ps1                   # ZIP portable
 └── FerreSys.slnx
 ```
 
-La base de datos `ferresys.db` se crea automáticamente **junto al ejecutable** la primera vez que se abre la app.
+La base de datos `ferresys.db` se crea en `%LOCALAPPDATA%\FerreSys` la primera vez que se abre la app. No viaja junto al ejecutable.
 
-> **Importante:** no instales la app en `Program Files` si quieres guardar ventas/productos sin permisos de administrador. Usa una carpeta del usuario (recomendado: `%LOCALAPPDATA%\FerreSys` o una carpeta portable).
+---
+
+## Licencias y respaldos
+
+No hace falta Supabase ni otro servidor. La ferretería cobra sin internet. Sin un archivo de licencia válido, el programa abre en plan gratuito: hasta 200 productos y sin paquete cifrado para la nube.
+
+La licencia dura **30 días**, más **5 de gracia**. Cada mes hay que generar otro archivo y mandárselo al cliente (WhatsApp alcanza). Si no paga, no se le manda el siguiente y, al vencer, vuelve al plan gratuito. El mostrador sigue abriendo.
+
+La llave privada vive solo en tu PC:
+
+```text
+%USERPROFILE%\.ferresys\licensing\private.xml
+```
+
+No la copies al instalador ni al repositorio. La app solo trae la llave pública. No ejecutes `keygen --force`: eso crea otra privada y las licencias ya emitidas dejan de servir.
+
+### Generar la licencia del mes
+
+1. En la ferretería: Datos del negocio → **Administrar licencia** → **Copiar**. Ese texto es el identificador de esa computadora.
+2. En tu PC, desde la carpeta del repo:
+
+```powershell
+dotnet run --project FerreSys.LicenseIssuer -- issue --email ferreteria@gmail.com --name "Ferretería El MVP" --hardware PEGA_AQUI_EL_ID
+```
+
+3. El comando escribe `license.lic` en la carpeta actual e imprime un código `FS-XXXX-XXXX` y el identificador de la licencia.
+4. Envía ese `.lic`. En la misma pantalla, el cliente usa **Importar archivo .lic**.
+
+Opciones útiles:
+
+```powershell
+dotnet run --project FerreSys.LicenseIssuer -- issue --email ferreteria@gmail.com --name "Ferretería El MVP" --hardware PEGA_AQUI_EL_ID --days 30 --output .\license.lic
+dotnet run --project FerreSys.LicenseIssuer -- revoke --code FS-XXXX-XXXX
+```
+
+`revoke` impide emitir o renovar ese código en tu PC. Un `.lic` que el cliente ya importó sigue vigente hasta su fecha.
+
+El archivo queda en la ferretería en `%LOCALAPPDATA%\FerreSys\license.lic`.
+
+### Respaldos
+
+| Copia | Cuándo | Dónde |
+|-------|--------|--------|
+| Base de datos | Cada vez que se cierra FerreSys | `Documentos\FerreSys_Backups` en esa misma PC |
+| Paquete cifrado | Solo con licencia Premium, al cerrar o al guardar el Corte Z | `%LOCALAPPDATA%\FerreSys\pending-backups` |
+
+Esas copias no se suben a la nube. Si se daña ese disco, no hay otra copia fuera de la ferretería.
 
 ---
 
@@ -97,7 +146,7 @@ Se muestra en el título de la ventana: `FerreSys MVP - Terminal de Mostrador v0
 
 1. Actualiza `Version`, `AssemblyVersion`, `FileVersion` e `InformationalVersion` en `Directory.Build.props` (manténlos alineados).
 2. Compila y prueba en local.
-3. Empaqueta con `scripts\publish.ps1`.
+3. Arma el instalador con `.\build-release.ps1` (y, si quieres el ZIP portable, `scripts\publish.ps1`).
 4. Crea un tag git:
 
 ```powershell
@@ -105,7 +154,37 @@ git tag -a v0.1.0 -m "Release v0.1.0"
 git push origin v0.1.0
 ```
 
-5. Sube el ZIP `artifacts\FerreSys-v0.1.0-win-x64.zip` a donde distribuyas (SharePoint, Drive, GitHub Releases, etc.).
+5. Pasa a cada cliente `releases\FerreSysApp-win-Setup.exe`. El ZIP `artifacts\FerreSys-v0.1.0-win-x64.zip` queda como copia portable.
+
+---
+
+## Instalador para clientes
+
+Esto produce el programa que se les pasa. No incluye la llave privada ni una licencia: cada ferretería recibe después su `.lic`.
+
+Hace falta el SDK de .NET 10 y la herramienta de Velopack, una sola vez:
+
+```powershell
+dotnet tool install -g vpk
+```
+
+Luego, desde la carpeta del repo:
+
+```powershell
+.\build-release.ps1
+```
+
+El script publica `FerreSys.exe` (Windows 64-bit, con el runtime incluido; el cliente no instala .NET) y arma el instalador. El archivo para enviar es:
+
+```text
+releases\FerreSysApp-win-Setup.exe
+```
+
+En la ferretería se ejecuta ese Setup. Instala por usuario, sin copiar la base de otra PC. Los datos quedan en `%LOCALAPPDATA%\FerreSys`.
+
+La versión del instalador está escrita en `build-release.ps1` (`-v 0.1.0`). Al soltar una versión nueva, súbela ahí y también en `Directory.Build.props`, con el mismo número.
+
+El ZIP portable (`.\scripts\publish.ps1`) es otra forma de llevar la carpeta publicada. Para un cliente, el archivo de instalación es el Setup de arriba.
 
 ---
 
@@ -173,9 +252,9 @@ La máquina destino **sí** necesita el Desktop Runtime de .NET 10:
    C:\FerreSys\
    ```
 
-3. Ejecuta `FerreSys.Infrastructure.UI.exe`.
+3. Ejecuta `FerreSys.exe`.
 4. (Opcional) Crea un acceso directo en el Escritorio apuntando a ese `.exe`.
-5. La primera ejecución crea `ferresys.db` en la **misma carpeta** del ejecutable.
+5. La primera ejecución crea `ferresys.db` en `%LOCALAPPDATA%\FerreSys`, no junto al ejecutable.
 
 ### Antivirus / SmartScreen
 
@@ -241,7 +320,7 @@ Cuando quieras updates semiautomáticos:
 
 | Opción | Idea |
 |--------|------|
-| **Velopack / Squirrel** | Instalador + feed de updates; descarga e instala en segundo plano |
+| **Velopack** | El instalador ya se arma con `.\build-release.ps1`. La descarga automática sigue apagada: `FeedUrl` en `UpdateSettings.cs` está vacío |
 | **GitHub Releases** | `publish.ps1` + release con el ZIP; un checador de versión compara con `Directory.Build.props` / endpoint |
 | **Mover DB a AppData** | Separar datos de binarios facilita reemplazar solo el `.exe` |
 
@@ -255,8 +334,10 @@ Hasta entonces, el proceso ZIP + conservar `ferresys.db` es el contrato de actua
 |----------|------------------|
 | Correr en local | `dotnet run --project FerreSys.Infrastructure.UI\FerreSys.Infrastructure.UI.csproj` |
 | Subir versión | Editar `Directory.Build.props` |
-| Empaquetar | `.\scripts\publish.ps1` |
-| Instalar en otra PC | Descomprimir ZIP → ejecutar `.exe` en carpeta de usuario |
+| Empaquetar instalador | `.\build-release.ps1` → `releases\FerreSysApp-win-Setup.exe` |
+| Empaquetar ZIP | `.\scripts\publish.ps1` |
+| Instalar en otra PC | Ejecutar `FerreSysApp-win-Setup.exe` |
+| Generar licencia del mes | `dotnet run --project FerreSys.LicenseIssuer -- issue --email ... --name ... --hardware ...` |
 | Actualizar | Respaldar `ferresys.db` → reemplazar binarios → conservar DB |
 
 ---

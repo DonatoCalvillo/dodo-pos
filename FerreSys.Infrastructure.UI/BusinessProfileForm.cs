@@ -6,6 +6,7 @@ namespace FerreSys.Infrastructure.UI;
 public sealed class BusinessProfileForm : Form
 {
     private readonly IAppSettingsStore _settings;
+    private readonly LocalSubscriptionService _subscription;
     private readonly Font _previewFont = new("Consolas", 8.25f);
 
     private ZoomImage picLogo = null!;
@@ -30,9 +31,10 @@ public sealed class BusinessProfileForm : Form
     private bool _loading;
     private bool _refreshing;
 
-    public BusinessProfileForm(IAppSettingsStore settings)
+    public BusinessProfileForm(IAppSettingsStore settings, LocalSubscriptionService subscription)
     {
         _settings = settings;
+        _subscription = subscription;
         BuildUi();
         LoadProfile();
         FormClosed += (_, _) =>
@@ -47,8 +49,8 @@ public sealed class BusinessProfileForm : Form
     private void BuildUi()
     {
         Text = "Datos del negocio - FerreSys";
-        Size = new Size(980, 740);
-        MinimumSize = new Size(900, 680);
+        Size = new Size(980, 800);
+        MinimumSize = new Size(900, 740);
         StartPosition = FormStartPosition.CenterParent;
         Font = UiTheme.Ui;
         BackColor = UiTheme.WindowBg;
@@ -70,17 +72,19 @@ public sealed class BusinessProfileForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             BackColor = UiTheme.WindowBg
         };
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 168));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         left.Controls.Add(CreateIdentity(), 0, 0);
         left.Controls.Add(CreateContact(), 0, 1);
         left.Controls.Add(CreateMessages(), 0, 2);
-        left.Controls.Add(CreateOrder(), 0, 3);
+        left.Controls.Add(CreateLicense(), 0, 3);
+        left.Controls.Add(CreateOrder(), 0, 4);
 
         root.Controls.Add(left, 0, 0);
         root.Controls.Add(CreatePreview(), 1, 0);
@@ -166,6 +170,27 @@ public sealed class BusinessProfileForm : Form
         AddRow(grid, 1, "Devoluciones", txtReturnPolicy);
         AddRow(grid, 2, "Nota al pie", txtNote);
         gb.Controls.Add(grid);
+        return gb;
+    }
+
+    private Control CreateLicense()
+    {
+        var gb = UiHelp.CreateGroupBox("Licencia");
+        var host = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(8, 14, 8, 4)
+        };
+        var button = new Button { Text = "Administrar licencia", AutoSize = true, Font = UiTheme.Ui };
+        button.Click += (_, _) =>
+        {
+            using var form = new LicenseForm(_subscription);
+            form.ShowDialog(this);
+        };
+        host.Controls.Add(button);
+        gb.Controls.Add(host);
         return gb;
     }
 

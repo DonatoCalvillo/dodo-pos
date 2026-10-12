@@ -25,6 +25,9 @@ public class SearchProductsUseCase
             var product = _productRepository.GetByBarcode(searchTerm);
             if (product != null)
             {
+                if (!product.IsActive)
+                    return new List<Product>();
+
                 return new List<Product> { product };
             }
         }

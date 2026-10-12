@@ -57,6 +57,8 @@ $RECYCLE.BIN/
 .env.*
 appsettings.*.local.json
 secrets.json
+private.xml
+*.private.xml
 
 ## Publish / installer leftovers
 *.PublishSettings
@@ -65,3 +67,5 @@ secrets.json
 *.msm
 *.msp
 *.cab
+
+releases/

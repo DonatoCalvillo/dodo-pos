@@ -9,4 +9,10 @@ public interface IAppSettingsStore
     void RemoveTicketLogo();
     PeripheralSettings GetPeripheralSettings();
     void SavePeripheralSettings(PeripheralSettings settings);
+
+    bool IsSeedOfferCompleted();
+    void MarkSeedOfferCompleted();
+
+    string? GetLicenseKey();
+    void SaveLicenseKey(string licenseKey);
 }

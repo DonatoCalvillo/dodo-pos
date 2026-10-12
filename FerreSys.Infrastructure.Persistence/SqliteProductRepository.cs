@@ -7,7 +7,7 @@ namespace FerreSys.Infrastructure.Persistence;
 public class SqliteProductRepository : IProductRepository
 {
     private const string ProductSelect =
-        "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock FROM Products";
+        "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, IsActive FROM Products";
 
     private readonly SqliteDbContext _context;
 
@@ -53,7 +53,7 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         // Filtro Fuzzy simple usando LIKE. El operador % busca coincidencias en cualquier parte del texto.
-        string query = ProductSelect + " WHERE Name LIKE @Term;";
+        string query = ProductSelect + " WHERE Name LIKE @Term AND IsActive = 1;";
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@Term", $"%{term}%");
 
@@ -88,6 +88,18 @@ public class SqliteProductRepository : IProductRepository
 
         using var command = new SqliteCommand(query, connection);
         BindProductParameters(command, product);
+        command.ExecuteNonQuery();
+    }
+
+    public void Deactivate(Guid productId)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        using var command = new SqliteCommand(
+            "UPDATE Products SET IsActive = 0 WHERE Id = @Id;",
+            connection);
+        command.Parameters.AddWithValue("@Id", productId.ToString());
         command.ExecuteNonQuery();
     }
 
@@ -779,8 +791,9 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         string query = ProductSelect + @"
-            WHERE Stock <= 0
-               OR (MinStock > 0 AND Stock <= MinStock)
+            WHERE IsActive = 1
+              AND (Stock <= 0
+               OR (MinStock > 0 AND Stock <= MinStock))
             ORDER BY
                 CASE WHEN Stock <= 0 THEN 0 ELSE 1 END,
                 Name COLLATE NOCASE;";
@@ -848,6 +861,8 @@ public class SqliteProductRepository : IProductRepository
                 MidpointRounding.AwayFromZero);
         }
 
+        bool isActive = reader.FieldCount <= 9 || reader.IsDBNull(9) || Convert.ToInt64(reader.GetValue(9)) != 0;
+
         return new Product(
             Guid.Parse(reader.GetString(0)),
             reader.GetString(1),
@@ -857,7 +872,8 @@ public class SqliteProductRepository : IProductRepository
             stock,
             unit,
             minStock,
-            desiredStock);
+            desiredStock,
+            isActive);
     }
 
     private static void InsertStockMovements(
