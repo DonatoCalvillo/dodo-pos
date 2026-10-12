@@ -103,6 +103,17 @@ public class SqliteProductRepository : IProductRepository
         command.ExecuteNonQuery();
     }
 
+    public int DeactivateAll()
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        using var command = new SqliteCommand(
+            "UPDATE Products SET IsActive = 0 WHERE IsActive = 1;",
+            connection);
+        return command.ExecuteNonQuery();
+    }
+
     public void SaveSale(Sale sale)
     {
         using var connection = _context.CreateConnection();

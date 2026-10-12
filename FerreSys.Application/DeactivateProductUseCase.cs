@@ -18,4 +18,6 @@ public class DeactivateProductUseCase
 
         _productRepository.Deactivate(productId);
     }
+
+    public int ExecuteAll() => _productRepository.DeactivateAll();
 }

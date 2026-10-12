@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-main
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Instalar vpk
+        shell: pwsh
+        run: |
+          dotnet tool update -g vpk
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
+
+      - name: Empaquetar
+        shell: pwsh
+        run: .\build-release.ps1 -Version "0.1.${{ github.run_number }}"
+
+      - name: Publicar en GitHub Releases
+        shell: pwsh
+        run: >
+          vpk upload github
+          --outputDir .\releases
+          --repoUrl https://github.com/DonatoCalvillo/dodo-pos
+          --token ${{ secrets.GITHUB_TOKEN }}
+          --publish
+          --targetCommitish ${{ github.sha }}

@@ -22,6 +22,11 @@ public interface IProductRepository
     /// </summary>
     void Deactivate(Guid productId);
 
+    /// <summary>
+    /// Hides every active product without deleting rows. Returns how many were hidden.
+    /// </summary>
+    int DeactivateAll();
+
     void SaveSale(Sale sale);
 
     /// <summary>

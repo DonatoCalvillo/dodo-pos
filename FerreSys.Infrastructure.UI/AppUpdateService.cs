@@ -1,28 +1,42 @@
 using System.Diagnostics;
 using Velopack;
+using Velopack.Sources;
 
 namespace FerreSys.Infrastructure.UI;
 
+internal enum StartupUpdateResult
+{
+    Continue,
+    Restarting
+}
+
 internal static class AppUpdateService
 {
-    public static async Task CheckSilentlyAsync()
+    public static async Task<StartupUpdateResult> ApplyAvailableUpdateAsync(Action<string> report)
     {
         if (string.IsNullOrWhiteSpace(UpdateSettings.FeedUrl))
-            return;
+            return StartupUpdateResult.Continue;
 
         try
         {
-            var manager = new UpdateManager(UpdateSettings.FeedUrl);
-            var update = await manager.CheckForUpdatesAsync().ConfigureAwait(false);
+            report("Buscando actualización...");
+            var manager = new UpdateManager(new GithubSource(UpdateSettings.FeedUrl, null, false));
+            UpdateInfo? update = await manager.CheckForUpdatesAsync();
             if (update == null)
-                return;
+                return StartupUpdateResult.Continue;
 
-            await manager.DownloadUpdatesAsync(update).ConfigureAwait(false);
-            manager.WaitExitThenApplyUpdates(update);
+            report("Descargando actualización...");
+            await manager.DownloadUpdatesAsync(update, progress => report($"Descargando actualización... {progress}%"));
+            report("Instalando actualización...");
+            manager.ApplyUpdatesAndRestart(update);
+            return StartupUpdateResult.Restarting;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Error al actualizar: {ex.Message}");
+            report("No se pudo buscar la actualización. Abriendo FerreSys...");
+            await Task.Delay(1200);
+            return StartupUpdateResult.Continue;
         }
     }
 }

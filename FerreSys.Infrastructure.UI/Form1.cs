@@ -171,6 +171,8 @@ public partial class Form1 : Form
         mProductos.DropDownItems.Add(new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click));
         mProductos.DropDownItems.Add(new ToolStripMenuItem("Sugerido de &compra...", null, (_, _) => OpenPurchaseSuggestion()));
         mProductos.DropDownItems.Add(new ToolStripMenuItem("&Historial de movimientos (Kárdex)...", null, (_, _) => OpenKardex()));
+        mProductos.DropDownItems.Add(new ToolStripSeparator());
+        mProductos.DropDownItems.Add(new ToolStripMenuItem("&Ocultar todo el inventario...", null, (_, _) => HideAllInventory()));
 
         var mVenta = new ToolStripMenuItem("&Venta");
         mVenta.DropDownItems.Add(new ToolStripMenuItem("&Cobrar (F5)", null, BtnCheckout_Click));
@@ -224,6 +226,9 @@ public partial class Form1 : Form
         btnOpenAddProduct = CreateToolItem("Registrar", UiIcons.AddProduct());
         btnOpenAddProduct.Click += BtnOpenAddProduct_Click;
 
+        var btnHideInventory = CreateToolItem("Ocultar inventario", UiIcons.Clear());
+        btnHideInventory.Click += (_, _) => HideAllInventory();
+
         var btnBusiness = CreateToolItem("Negocio", UiIcons.Business());
         btnBusiness.Click += (_, _) => OpenBusinessProfile();
 
@@ -246,6 +251,7 @@ public partial class Form1 : Form
             btnKardex,
             btnImportExcel,
             btnOpenAddProduct,
+            btnHideInventory,
             btnBusiness,
             btnPeripherals,
             new ToolStripSeparator(),
@@ -727,7 +733,6 @@ public partial class Form1 : Form
         PromptOpeningCashIfNeeded();
         _ = _cloudBackup.TryUploadPendingAsync();
         _ = TryRenewLicenseAsync();
-        _ = AppUpdateService.CheckSilentlyAsync();
     }
 
     private async Task TryRenewLicenseAsync()
@@ -1661,6 +1666,37 @@ public partial class Form1 : Form
         catch (Exception ex)
         {
             MessageBox.Show(ex.Message, "No se pudo ocultar el producto", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void HideAllInventory()
+    {
+        var confirm = MessageBox.Show(
+            "¿Ocultar todo el inventario del mostrador?\n\nLos productos dejarán de aparecer en búsquedas y en el lector. Las ventas y el kárdex se conservan. Los carritos abiertos se vacían.",
+            "Ocultar inventario",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        if (confirm != DialogResult.Yes)
+            return;
+
+        try
+        {
+            int hidden = _deactivateProductUseCase.ExecuteAll();
+            foreach (CartSession session in _cartSessions)
+                session.Lines.Clear();
+            dgvCart.Rows.Clear();
+            CalculateTotal();
+            txtBuscador.Clear();
+            dgvSearch.Rows.Clear();
+            SetStatus(hidden == 0
+                ? "No había productos visibles en el mostrador"
+                : $"Inventario oculto: {hidden} productos");
+            RefreshStockAlerts();
+            txtBuscador.Focus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "No se pudo ocultar el inventario", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

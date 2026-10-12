@@ -12,7 +12,14 @@ static class Program
     {
         VelopackApp.Build().Run();
 
-        ApplicationConfiguration.Initialize();
-        System.Windows.Forms.Application.Run(new Form1(args));
+        try
+        {
+            ApplicationConfiguration.Initialize();
+            System.Windows.Forms.Application.Run(new StartupForm(args));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "FerreSys", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 }

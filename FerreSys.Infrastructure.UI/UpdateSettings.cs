@@ -3,9 +3,9 @@ namespace FerreSys.Infrastructure.UI;
 internal static class UpdateSettings
 {
     /// <summary>
-    /// Feed HTTP de Velopack (carpeta de releases). Vacío hasta que exista el servidor.
+    /// Repositorio de GitHub del que Velopack baja los releases publicados desde main.
     /// </summary>
-    public const string FeedUrl = "";
+    public const string FeedUrl = "https://github.com/DonatoCalvillo/dodo-pos";
 
     /// <summary>
     /// API de licencias, sin barra final. Vacío hasta que exista el servidor.

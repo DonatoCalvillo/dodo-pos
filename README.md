@@ -144,17 +144,11 @@ Se muestra en el título de la ventana: `FerreSys MVP - Terminal de Mostrador v0
 
 ### Checklist al liberar una versión
 
-1. Actualiza `Version`, `AssemblyVersion`, `FileVersion` e `InformationalVersion` en `Directory.Build.props` (manténlos alineados).
-2. Compila y prueba en local.
-3. Arma el instalador con `.\build-release.ps1` (y, si quieres el ZIP portable, `scripts\publish.ps1`).
-4. Crea un tag git:
+Un push a `main` publica solo el instalador. No hace falta subir la versión a mano ni crear un tag.
 
-```powershell
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
-```
-
-5. Pasa a cada cliente `releases\FerreSysApp-win-Setup.exe`. El ZIP `artifacts\FerreSys-v0.1.0-win-x64.zip` queda como copia portable.
+1. Prueba en local.
+2. Haz push a `main`. La acción arma la versión `0.1.{número de ejecución}` y la deja en [GitHub Releases](https://github.com/DonatoCalvillo/dodo-pos/releases).
+3. La primera vez en cada ferretería, descarga `FerreSysApp-win-Setup.exe` de ese release y ejecútalo. Después la app se actualiza sola.
 
 ---
 
@@ -168,23 +162,17 @@ Hace falta el SDK de .NET 10 y la herramienta de Velopack, una sola vez:
 dotnet tool install -g vpk
 ```
 
-Luego, desde la carpeta del repo:
+Luego, desde la carpeta del repo, el empaquetado local es:
 
 ```powershell
-.\build-release.ps1
+.\build-release.ps1 -Version 0.1.0
 ```
 
-El script publica `FerreSys.exe` (Windows 64-bit, con el runtime incluido; el cliente no instala .NET) y arma el instalador. El archivo para enviar es:
+Eso deja `releases\FerreSysApp-win-Setup.exe` en tu PC. El archivo que se entrega a una ferretería nueva es el mismo Setup, publicado en GitHub Releases por el push a `main`. El cliente no instala .NET.
 
-```text
-releases\FerreSysApp-win-Setup.exe
-```
+En la ferretería se ejecuta ese Setup una vez. Instala por usuario. Los datos quedan en `%LOCALAPPDATA%\FerreSys` y no viajan con el instalador.
 
-En la ferretería se ejecuta ese Setup. Instala por usuario, sin copiar la base de otra PC. Los datos quedan en `%LOCALAPPDATA%\FerreSys`.
-
-La versión del instalador está escrita en `build-release.ps1` (`-v 0.1.0`). Al soltar una versión nueva, súbela ahí y también en `Directory.Build.props`, con el mismo número.
-
-El ZIP portable (`.\scripts\publish.ps1`) es otra forma de llevar la carpeta publicada. Para un cliente, el archivo de instalación es el Setup de arriba.
+Para probar el empaquetado sin publicarlo, el comando de arriba alcanza. El ZIP portable (`.\scripts\publish.ps1`) no se actualiza solo. El archivo que instala y recibe actualizaciones es el Setup.
 
 ---
 
@@ -268,63 +256,13 @@ En máquinas nuevas, Windows puede mostrar “Windows protegió tu PC” si el b
 
 ---
 
-## Actualizaciones (cómo funcionan hoy)
+## Actualizaciones
 
-Hoy el update es **manual**: sustituyes los binarios y **conservas** la base de datos.
+La app instalada con el Setup consulta `https://github.com/DonatoCalvillo/dodo-pos` al abrir. Si en GitHub Releases hay una versión mayor, la descarga mientras se usa el mostrador y la aplica al cerrar. No hay que copiar archivos ni respaldar la base para actualizar.
 
-### Diagrama del flujo
+El repositorio tiene que ser público. Si es privado, la ferretería no puede bajar el paquete.
 
-```text
-PC cliente                          Tú (desarrollo)
-─────────                          ────────────────
-FerreSys\                          Directory.Build.props → 0.1.1
-  FerreSys.Infrastructure.UI.exe
-  ferresys.db  ←── NO TOCAR        publish.ps1 → ZIP v0.1.1
-  (otros dll/native)
-                 │
-                 │  enviás ZIP
-                 ▼
-            1) Cerrar FerreSys
-            2) Copiar ferresys.db a un respaldo
-            3) Reemplazar .exe y archivos del paquete NUEVO
-            4) Dejar (o restaurar) ferresys.db en la carpeta
-            5) Abrir la app → versión nueva en el título
-```
-
-### Procedimiento paso a paso
-
-1. En la PC del cliente, **cierra** FerreSys.
-2. Respalda la DB:
-
-   ```powershell
-   Copy-Item "C:\FerreSys\ferresys.db" "C:\FerreSys\backups\ferresys-2026-07-14.db"
-   ```
-
-3. Extrae el ZIP nuevo en una carpeta temporal.
-4. Copia **todos** los archivos del ZIP **excepto** `ferresys.db` (si viniera) sobre la instalación existente.
-5. Verifica que `ferresys.db` sigue siendo el del cliente.
-6. Abre la app y confirma la versión en el título (`vX.Y.Z`).
-
-### Migraciones de base de datos
-
-La app usa `CREATE TABLE IF NOT EXISTS` y, cuando hace falta, `ALTER TABLE` defensivos (por ejemplo columnas de pago en `Sales`). Eso permite:
-
-- **Updates menores/patch** con esquema compatible: abrir la app nueva con la DB vieja suele bastar.
-- **Updates mayores** que cambien el esquema de forma incompatible: documenta en el release notes y, si aplica, un script/migración manual antes de desplegar.
-
-Si un update rompe la DB, restaura el respaldo del paso 2.
-
-### Futuro (sugerido, aún no implementado)
-
-Cuando quieras updates semiautomáticos:
-
-| Opción | Idea |
-|--------|------|
-| **Velopack** | El instalador ya se arma con `.\build-release.ps1`. La descarga automática sigue apagada: `FeedUrl` en `UpdateSettings.cs` está vacío |
-| **GitHub Releases** | `publish.ps1` + release con el ZIP; un checador de versión compara con `Directory.Build.props` / endpoint |
-| **Mover DB a AppData** | Separar datos de binarios facilita reemplazar solo el `.exe` |
-
-Hasta entonces, el proceso ZIP + conservar `ferresys.db` es el contrato de actualización.
+La base sigue en `%LOCALAPPDATA%\FerreSys`. Al abrir, el programa crea las tablas que falten y agrega columnas nuevas con `ALTER TABLE`. No hay un paso de migración aparte. Una copia abierta con `dotnet run`, o un ZIP descomprimido a mano, no recibe estas actualizaciones: solo el programa instalado con `FerreSysApp-win-Setup.exe`.
 
 ---
 
@@ -333,12 +271,12 @@ Hasta entonces, el proceso ZIP + conservar `ferresys.db` es el contrato de actua
 | Objetivo | Comando / acción |
 |----------|------------------|
 | Correr en local | `dotnet run --project FerreSys.Infrastructure.UI\FerreSys.Infrastructure.UI.csproj` |
-| Subir versión | Editar `Directory.Build.props` |
-| Empaquetar instalador | `.\build-release.ps1` → `releases\FerreSysApp-win-Setup.exe` |
+| Subir versión | Push a `main` (la acción publica `0.1.{ejecución}`) |
+| Empaquetar instalador local | `.\build-release.ps1 -Version 0.1.0` |
 | Empaquetar ZIP | `.\scripts\publish.ps1` |
-| Instalar en otra PC | Ejecutar `FerreSysApp-win-Setup.exe` |
+| Instalar en otra PC | Ejecutar una vez `FerreSysApp-win-Setup.exe` del release |
 | Generar licencia del mes | `dotnet run --project FerreSys.LicenseIssuer -- issue --email ... --name ... --hardware ...` |
-| Actualizar | Respaldar `ferresys.db` → reemplazar binarios → conservar DB |
+| Actualizar | Abrir FerreSys con internet y cerrarlo cuando termine el día |
 
 ---
 
