@@ -70,8 +70,8 @@ public class CashCloseForm : Form
     private void InitializeComponent()
     {
         Text = _mode == CashCutMode.X
-            ? "Corte X - Estado de caja - FerreSys"
-            : "Corte Z - Cierre de caja - FerreSys";
+            ? "Corte X - Estado de caja - Posly"
+            : "Corte Z - Cierre de caja - Posly";
         Size = _mode == CashCutMode.X ? new Size(480, 760) : new Size(480, 720);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;

@@ -17,14 +17,14 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <ApplicationIcon>Assets\dodo.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\posly.ico</ApplicationIcon>
     <AssemblyName>FerreSys</AssemblyName>
     <Version>0.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Assets\dodo_dark.png" LogicalName="FerreSys.Infrastructure.UI.Assets.dodo_dark.png" />
-    <EmbeddedResource Include="Assets\dodo.ico" LogicalName="FerreSys.Infrastructure.UI.Assets.dodo.ico" />
+    <EmbeddedResource Include="Assets\posly.png" LogicalName="FerreSys.Infrastructure.UI.Assets.posly.png" />
+    <EmbeddedResource Include="Assets\posly.ico" LogicalName="FerreSys.Infrastructure.UI.Assets.posly.ico" />
   </ItemGroup>
 
 </Project>

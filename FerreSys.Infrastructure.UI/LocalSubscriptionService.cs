@@ -38,14 +38,19 @@ public sealed class LocalSubscriptionService : ISubscriptionService
         get
         {
             lock (_gate)
-                return IsPremium(_payload) ? _payload!.LicenseId : null;
+                return IsPaid(_payload) ? _payload!.LicenseId : null;
         }
     }
 
     public SubscriptionTier GetCurrentTier()
     {
         lock (_gate)
-            return IsPremium(_payload) ? SubscriptionTier.Premium : SubscriptionTier.Free;
+            return IsPaid(_payload) ? SubscriptionTier.Premium : SubscriptionTier.Free;
+    }
+
+    public TrialEvaluation ReadTrial(bool recordLastSeen = false)
+    {
+        return new TrialClock(_store).Evaluate(recordLastSeen);
     }
 
     public void Reload()
@@ -98,6 +103,5 @@ public sealed class LocalSubscriptionService : ISubscriptionService
         TryInstall(result.License, out _);
     }
 
-    private static bool IsPremium(LicensePayload? payload) =>
-        payload != null && string.Equals(payload.PlanName, "Premium", StringComparison.OrdinalIgnoreCase);
+    private static bool IsPaid(LicensePayload? payload) => payload != null;
 }

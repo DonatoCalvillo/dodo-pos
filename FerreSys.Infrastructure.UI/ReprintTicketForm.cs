@@ -19,7 +19,7 @@ public sealed class ReprintTicketForm : Form
         _profile = settings.GetTicketProfile();
 
         string shortId = sale.Id.ToString()[..8].ToUpper();
-        Text = "Reimprimir ticket - FerreSys";
+        Text = "Reimprimir ticket - Posly";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;

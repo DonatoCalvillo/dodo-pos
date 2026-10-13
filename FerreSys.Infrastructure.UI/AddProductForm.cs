@@ -38,7 +38,7 @@ public partial class AddProductForm : Form
 
     private void InitializeComponent()
     {
-        this.Text = _isEditMode ? "Editar Producto - FerreSys" : "Registrar Nuevo Producto - FerreSys";
+        this.Text = _isEditMode ? "Editar Producto - Posly" : "Registrar Nuevo Producto - Posly";
         this.Size = new Size(420, 620);
         this.FormBorderStyle = FormBorderStyle.FixedDialog;
         this.MaximizeBox = false;

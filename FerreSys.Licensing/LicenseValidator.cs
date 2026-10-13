@@ -95,7 +95,7 @@ public sealed class LicenseValidator
             if (lastSeen.HasValue && now < lastSeen.Value)
                 return new LicenseValidationResult(false, null, ClockRollbackMessage);
 
-            if (now > payload.ExpiresAt.AddDays(payload.GraceDays))
+            if (LicensePlanInfo.Expires(payload.Plan) && now > payload.ExpiresAt.AddDays(payload.GraceDays))
                 return new LicenseValidationResult(false, null, "Su suscripción ha expirado.");
 
             if (recordLastSeen)

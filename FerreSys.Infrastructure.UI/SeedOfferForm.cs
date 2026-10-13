@@ -41,7 +41,7 @@ public class SeedOfferForm : Form
 
         chkLoad = new CheckBox
         {
-            Text = "Cargar catálogo inicial de ejemplo (aproximadamente 150 productos frecuentes de ferretería)",
+            Text = "Cargar catálogo inicial de ejemplo (aproximadamente 150 productos frecuentes)",
             Dock = DockStyle.Fill,
             Checked = true,
             Font = UiTheme.Ui,

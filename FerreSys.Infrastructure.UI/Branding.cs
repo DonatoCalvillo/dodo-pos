@@ -2,15 +2,16 @@ namespace FerreSys.Infrastructure.UI;
 
 internal static class Branding
 {
-    private static readonly Stream IconStream = Open("FerreSys.Infrastructure.UI.Assets.dodo.ico");
+    private static readonly Stream IconStream = Open("FerreSys.Infrastructure.UI.Assets.posly.ico");
 
     public static Image Logo { get; } = LoadLogo();
+    public static Image ToolbarLogo { get; } = Scale(Logo, 48);
     public static Image Mark { get; } = Scale(Logo, 16);
     public static Icon AppIcon { get; } = new Icon(IconStream);
 
     private static Image LoadLogo()
     {
-        using Stream stream = Open("FerreSys.Infrastructure.UI.Assets.dodo_dark.png");
+        using Stream stream = Open("FerreSys.Infrastructure.UI.Assets.posly.png");
         using var source = Image.FromStream(stream);
         return new Bitmap(source);
     }

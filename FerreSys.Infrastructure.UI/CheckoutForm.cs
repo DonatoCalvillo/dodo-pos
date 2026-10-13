@@ -37,7 +37,7 @@ public partial class CheckoutForm : Form
 
     private void InitializeComponent(decimal totalAmount)
     {
-        Text = "Procesar Pago - FerreSys";
+        Text = "Procesar Pago - Posly";
         Size = new Size(520, 640);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;

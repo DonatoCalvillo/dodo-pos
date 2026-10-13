@@ -10,7 +10,7 @@ public sealed class BusinessTicketProfile
 {
     public const string LogoFileName = "ticket-logo.png";
 
-    public string BusinessName { get; init; } = "FERRETERÍA EL MVP";
+    public string BusinessName { get; init; } = string.Empty;
     public string Address { get; init; } = "Calle Principal #123";
     public string Rfc { get; init; } = string.Empty;
     public string Phone { get; init; } = string.Empty;

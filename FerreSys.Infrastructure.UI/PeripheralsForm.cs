@@ -38,7 +38,7 @@ public sealed class PeripheralsForm : Form
 
     private void BuildUi()
     {
-        Text = "Periféricos e impresión - FerreSys";
+        Text = "Periféricos e impresión - Posly";
         Size = new Size(640, 560);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -317,7 +317,7 @@ public sealed class PeripheralsForm : Form
         if (devices.PrinterTransport == PrinterTransport.Windows && PeripheralDiscovery.HasMissingDriver(devices.WindowsPrinterName))
         {
             MessageBox.Show(
-                "Windows ve ese equipo, pero no tiene controlador de impresión, así que FerreSys no puede enviarle tickets.\n\n" +
+                "Windows ve ese equipo, pero no tiene controlador de impresión, así que Posly no puede enviarle tickets.\n\n" +
                 "En Configuración > Bluetooth y dispositivos > Impresoras y escáneres abre la impresora e instala el controlador. " +
                 "Si está activo el Modo de impresión protegida, Windows bloquea los controladores de térmicas: desactívalo, instala el de la impresora y pulsa Actualizar.",
                 "Impresora",

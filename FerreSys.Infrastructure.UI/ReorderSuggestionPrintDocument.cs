@@ -22,7 +22,7 @@ internal sealed class ReorderSuggestionPrintDocument : PrintDocument
     {
         _lines = summary.Lines;
         _generatedAt = DateTime.Now;
-        DocumentName = "FerreSys — Sugerido de Compra";
+        DocumentName = "Posly — Sugerido de Compra";
         DefaultPageSettings.Margins = new Margins(50, 50, 50, 55);
     }
 
@@ -79,7 +79,7 @@ internal sealed class ReorderSuggestionPrintDocument : PrintDocument
         using var muted = new SolidBrush(Color.FromArgb(90, 90, 90));
 
         g.FillRectangle(accent, margin.Left, y, 4, 36);
-        g.DrawString("FerreSys — Sugerido de Compra", TitleFont, titleBrush, margin.Left + 12, y);
+        g.DrawString("Posly — Sugerido de Compra", TitleFont, titleBrush, margin.Left + 12, y);
         y += 22;
 
         string meta =
@@ -181,7 +181,7 @@ internal sealed class ReorderSuggestionPrintDocument : PrintDocument
         var pageSize = g.MeasureString(page, FooterFont);
         g.DrawString(page, FooterFont, muted, margin.Right - pageSize.Width, y);
 
-        g.DrawString("FerreSys · Abastecimiento", FooterFont, muted, margin.Left, y + 14);
+        g.DrawString("Posly · Abastecimiento", FooterFont, muted, margin.Left, y + 14);
     }
 
     private int EstimateTotalPages()

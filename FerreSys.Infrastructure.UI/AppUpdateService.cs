@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Velopack;
 using Velopack.Sources;
 
@@ -31,10 +30,14 @@ internal static class AppUpdateService
             manager.ApplyUpdatesAndRestart(update);
             return StartupUpdateResult.Restarting;
         }
+        catch (Exception ex) when (ex.GetType().Name == "NotInstalledException")
+        {
+            return StartupUpdateResult.Continue;
+        }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error al actualizar: {ex.Message}");
-            report("No se pudo buscar la actualización. Abriendo FerreSys...");
+            Console.Error.WriteLine(ex);
+            report("No se pudo buscar la actualización. Abriendo Posly...");
             await Task.Delay(1200);
             return StartupUpdateResult.Continue;
         }

@@ -30,7 +30,13 @@ public partial class Form1 : Form
     private ToolStripButton btnKardex = null!;
     private ToolStripButton btnImportExcel = null!;
     private ToolStripStatusLabel lblStockAlerts = null!;
+    private ToolStripStatusLabel lblLicense = null!;
     private ToolStripLabel lblBrand = null!;
+    private ToolStripLabel lblBrandName = null!;
+    private ToolStripLabel lblBrandDivider = null!;
+    private ToolStripLabel lblBusinessLogo = null!;
+    private ToolStripLabel lblBusinessName = null!;
+    private Image? _businessLogo;
 
     private readonly List<CartSession> _cartSessions = [];
     private int _activeSessionIndex;
@@ -65,12 +71,12 @@ public partial class Form1 : Form
     private string? _lastScanCode;
     private decimal _saleTotal = 0;
 
-    public Form1(string[]? startupArgs = null)
+    public Form1(string[]? startupArgs = null, LocalSubscriptionService? subscription = null)
     {
         _startupArgs = startupArgs ?? [];
         _dbContext = new SqliteDbContext();
         _productRepository = new SqliteProductRepository(_dbContext);
-        _subscriptionService = new LocalSubscriptionService();
+        _subscriptionService = subscription ?? new LocalSubscriptionService();
         _addProductUseCase = new AddProductUseCase(_productRepository, _subscriptionService);
         _searchProductsUseCase = new SearchProductsUseCase(_productRepository);
         _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
@@ -93,7 +99,7 @@ public partial class Form1 : Form
         // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
         var version = typeof(Program).Assembly.GetName().Version;
         var versionLabel = version is null ? "" : $" v{version.ToString(3)}";
-        this.Text = $"FerreSys MVP - Terminal de Mostrador{versionLabel}";
+        this.Text = $"Posly - Punto de Venta{versionLabel}";
         this.StartPosition = FormStartPosition.CenterScreen;
 
         // Eliminamos los bordes de la ventana (maximizar, minimizar, cerrar tradicionales)
@@ -109,6 +115,7 @@ public partial class Form1 : Form
         this.Shown += Form1_Shown;
 
         InicializarComponentes();
+        RefreshLicenseStatus();
     }
 
     private void InicializarComponentes()
@@ -235,10 +242,45 @@ public partial class Form1 : Form
         var btnPeripherals = CreateToolItem("Periféricos", UiIcons.Printer());
         btnPeripherals.Click += (_, _) => OpenPeripherals();
 
-        lblBrand = new ToolStripLabel(BrandCaption())
+        lblBrand = new ToolStripLabel
+        {
+            Image = Branding.ToolbarLogo,
+            DisplayStyle = ToolStripItemDisplayStyle.Image,
+            ImageScaling = ToolStripItemImageScaling.None,
+            AutoSize = false,
+            Size = new Size(48, 48),
+            Margin = new Padding(12, 0, 2, 0),
+            Text = string.Empty
+        };
+        lblBrandName = new ToolStripLabel("POSLY")
         {
             Font = new Font("Tahoma", 11f, FontStyle.Bold),
-            ForeColor = UiTheme.GroupTitle
+            ForeColor = UiTheme.GroupTitle,
+            Margin = new Padding(0, 0, 4, 0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        lblBrandDivider = new ToolStripLabel("|")
+        {
+            Font = new Font("Tahoma", 11f, FontStyle.Bold),
+            ForeColor = UiTheme.GroupTitle,
+            Margin = new Padding(4, 0, 4, 0),
+            Visible = false
+        };
+        lblBusinessLogo = new ToolStripLabel
+        {
+            DisplayStyle = ToolStripItemDisplayStyle.Image,
+            ImageScaling = ToolStripItemImageScaling.None,
+            AutoSize = false,
+            Size = new Size(40, 40),
+            Margin = new Padding(4, 0, 4, 0),
+            Visible = false
+        };
+        lblBusinessName = new ToolStripLabel
+        {
+            Font = new Font("Tahoma", 11f, FontStyle.Bold),
+            ForeColor = UiTheme.GroupTitle,
+            Margin = new Padding(2, 0, 8, 0),
+            Visible = false
         };
 
         strip.Items.AddRange([
@@ -255,8 +297,13 @@ public partial class Form1 : Form
             btnBusiness,
             btnPeripherals,
             new ToolStripSeparator(),
-            lblBrand
+            lblBrand,
+            lblBrandName,
+            lblBrandDivider,
+            lblBusinessLogo,
+            lblBusinessName
         ]);
+        RefreshBrand();
 
         return strip;
     }
@@ -565,7 +612,18 @@ public partial class Form1 : Form
             BorderStyle = Border3DStyle.Etched
         };
 
+        lblLicense = new ToolStripStatusLabel(LicensePresentation.StatusBar(_subscriptionService))
+        {
+            IsLink = true,
+            LinkBehavior = LinkBehavior.HoverUnderline,
+            Font = UiTheme.UiBold,
+            BorderSides = ToolStripStatusLabelBorderSides.Left,
+            BorderStyle = Border3DStyle.Etched
+        };
+        lblLicense.Click += (_, _) => OpenLicense();
+
         status.Items.Add(lblStatus);
+        status.Items.Add(lblLicense);
         status.Items.Add(lblStockAlerts);
         status.Items.Add(connected);
         status.Items.Add(new ToolStripStatusLabel("Mostrador") { BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched });
@@ -744,11 +802,29 @@ public partial class Form1 : Form
         {
             using var client = new FerreSys.Licensing.LicenseApiClient(LicenseApiSettings.BaseUrl);
             await _subscriptionService.TryRenewAsync(client);
+            RefreshLicenseStatus();
         }
         catch
         {
             // Sin red, el periodo de gracia de la licencia local sigue aplicando.
         }
+    }
+
+    private void OpenLicense()
+    {
+        using var form = new LicenseForm(_subscriptionService);
+        form.ShowDialog(this);
+        RefreshLicenseStatus();
+    }
+
+    private void RefreshLicenseStatus()
+    {
+        if (lblLicense == null)
+            return;
+
+        bool paid = _subscriptionService.GetCurrentTier() == SubscriptionTier.Premium;
+        lblLicense.Text = LicensePresentation.StatusBar(_subscriptionService);
+        lblLicense.ForeColor = paid ? UiTheme.StatusOk : UiTheme.StatusWarn;
     }
 
     private void OfferSeedCatalogIfNeeded()
@@ -1314,16 +1390,56 @@ public partial class Form1 : Form
     private void OpenBusinessProfile()
     {
         using var form = new BusinessProfileForm(_appSettings, _subscriptionService);
-        if (form.ShowDialog(this) == DialogResult.OK)
-            lblBrand.Text = BrandCaption();
+        form.ShowDialog(this);
+        RefreshBrand();
     }
 
-    private string BrandCaption()
+    private void RefreshBrand()
     {
         string name = _appSettings.GetTicketProfile().BusinessName.Trim();
-        if (string.IsNullOrWhiteSpace(name) || name.Equals("FERRETERÍA EL MVP", StringComparison.OrdinalIgnoreCase))
-            return "  FerreSys — Punto de Venta";
-        return "  " + name;
+        string? logoPath = _appSettings.ResolveTicketLogoPath();
+        bool hasName = name.Length > 0;
+        bool hasLogo = false;
+        Image? nextLogo = null;
+        if (!string.IsNullOrWhiteSpace(logoPath))
+        {
+            try
+            {
+                using var source = Image.FromFile(logoPath);
+                nextLogo = ScaleBrandLogo(source, 36);
+                hasLogo = true;
+            }
+            catch (Exception)
+            {
+                nextLogo = null;
+            }
+        }
+
+        Image? previous = _businessLogo;
+        _businessLogo = nextLogo;
+        lblBusinessLogo.Image = nextLogo;
+        previous?.Dispose();
+
+        lblBusinessName.Text = name;
+        lblBrandDivider.Visible = hasName || hasLogo;
+        lblBusinessLogo.Visible = hasLogo;
+        lblBusinessName.Visible = hasName;
+    }
+
+    private static Bitmap ScaleBrandLogo(Image source, int size)
+    {
+        var bitmap = new Bitmap(size, size);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.Clear(Color.Transparent);
+        graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+        float scale = Math.Min(size / (float)source.Width, size / (float)source.Height);
+        int width = Math.Max(1, (int)(source.Width * scale));
+        int height = Math.Max(1, (int)(source.Height * scale));
+        int x = (size - width) / 2;
+        int y = (size - height) / 2;
+        graphics.DrawImage(source, x, y, width, height);
+        return bitmap;
     }
 
     private void OpenPeripherals()
@@ -1397,14 +1513,14 @@ public partial class Form1 : Form
         {
             string backupFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                "FerreSys_Backups");
-            string fileName = $"ferresys_{DateTime.Now:yyyyMMdd_HHmmss}.db";
+                "Posly_Backups");
+            string fileName = $"posly_{DateTime.Now:yyyyMMdd_HHmmss}.db";
             _dbContext.BackupTo(Path.Combine(backupFolder, fileName));
         }
         catch (Exception ex)
         {
             MessageBox.Show(
-                $"No se pudo guardar el respaldo en Documentos\\FerreSys_Backups.\n\n{ex.Message}",
+                $"No se pudo guardar el respaldo en Documentos\\Posly_Backups.\n\n{ex.Message}",
                 "Respaldo local",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
@@ -1439,7 +1555,7 @@ public partial class Form1 : Form
         if (e.KeyCode == Keys.Escape)
         {
             var confirmExit = MessageBox.Show(
-                "¿Seguro que deseas cerrar el punto de venta FerreSys?",
+                "¿Seguro que deseas cerrar Posly?",
                 "Salir del Sistema",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question
@@ -1565,10 +1681,10 @@ public partial class Form1 : Form
                 if (result.SkippedByLimit > 0 && result.Products.Count == 0)
                 {
                     MessageBox.Show(
-                        $"Has alcanzado el límite de {FreeTierLimits.ProductLimit} productos de la versión gratuita.\n\n" +
+                        $"Has alcanzado el límite de {FreeTierLimits.ProductLimit} productos de la prueba gratuita.\n\n" +
                         $"{result.SkippedByLimit} filas del archivo no se importaron.\n\n" +
                         FreeTierLimits.PremiumUpsell,
-                        "Límite de la versión gratuita",
+                        "Límite de la prueba gratuita",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning
                     );
@@ -1578,7 +1694,7 @@ public partial class Form1 : Form
                 {
                     MessageBox.Show(
                         $"Se han registrado {result.Products.Count} productos.\n\n" +
-                        $"{result.SkippedByLimit} filas no se importaron porque superan el límite de {FreeTierLimits.ProductLimit} de la versión gratuita.\n\n" +
+                        $"{result.SkippedByLimit} filas no se importaron porque superan el límite de {FreeTierLimits.ProductLimit} de la prueba gratuita.\n\n" +
                         FreeTierLimits.PremiumUpsell,
                         "Importador de Inventario",
                         MessageBoxButtons.OK,

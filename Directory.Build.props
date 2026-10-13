@@ -9,11 +9,11 @@
     <FileVersion>0.1.0.0</FileVersion>
     <InformationalVersion>0.1.0</InformationalVersion>
 
-    <Product>FerreSys</Product>
-    <AssemblyTitle>FerreSys</AssemblyTitle>
+    <Product>Posly</Product>
+    <AssemblyTitle>Posly</AssemblyTitle>
     <Company>DDTECH</Company>
     <Authors>DDTECH</Authors>
     <Copyright>Copyright © DDTECH</Copyright>
-    <Description>Sistema de punto de venta para ferretería</Description>
+    <Description>Sistema de punto de venta</Description>
   </PropertyGroup>
 </Project>

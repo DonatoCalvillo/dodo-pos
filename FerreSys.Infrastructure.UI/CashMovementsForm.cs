@@ -34,7 +34,7 @@ public class CashMovementsForm : Form
 
     private void InitializeComponent()
     {
-        Text = "Movimientos de caja - FerreSys";
+        Text = "Movimientos de caja - Posly";
         Size = new Size(640, 600);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;

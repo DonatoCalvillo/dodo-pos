@@ -18,7 +18,7 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
         var values = ReadAll();
         return new BusinessTicketProfile
         {
-            BusinessName = Get(values, "ticket.businessName", "FERRETERÍA EL MVP"),
+            BusinessName = Get(values, "ticket.businessName", string.Empty),
             Address = Get(values, "ticket.address", "Calle Principal #123"),
             Rfc = Get(values, "ticket.rfc", string.Empty),
             Phone = Get(values, "ticket.phone", string.Empty),

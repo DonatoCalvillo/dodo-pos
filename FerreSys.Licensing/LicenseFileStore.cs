@@ -18,6 +18,10 @@ public sealed class LicenseFileStore
 
     public string LastSeenPath => Path.Combine(Folder, "license.lastseen");
 
+    public string TrialStartedPath => Path.Combine(Folder, "trial.started");
+
+    public string TrialLastSeenPath => Path.Combine(Folder, "trial.lastseen");
+
     public void Save(SignedLicenseContainer container)
     {
         Directory.CreateDirectory(Folder);

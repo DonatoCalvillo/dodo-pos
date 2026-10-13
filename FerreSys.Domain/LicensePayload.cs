@@ -5,7 +5,8 @@ public sealed class LicensePayload
     public string LicenseId { get; set; } = Guid.NewGuid().ToString();
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerEmail { get; set; } = string.Empty;
-    public string PlanName { get; set; } = "Premium";
+    public LicensePlan Plan { get; set; } = LicensePlan.Monthly;
+    public string PlanName { get; set; } = "Mensual";
     public string HardwareId { get; set; } = string.Empty;
     public DateTime IssuedAt { get; set; }
     public DateTime ExpiresAt { get; set; }

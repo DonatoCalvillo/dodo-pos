@@ -29,7 +29,7 @@ public class AddProductUseCase
             if (currentTotal >= FreeTierLimits.ProductLimit)
             {
                 throw new InvalidOperationException(
-                    $"Has alcanzado el límite de {FreeTierLimits.ProductLimit} productos de la versión gratuita.\n\n" +
+                    $"Has alcanzado el límite de {FreeTierLimits.ProductLimit} productos de la prueba gratuita.\n\n" +
                     FreeTierLimits.PremiumUpsell
                 );
             }

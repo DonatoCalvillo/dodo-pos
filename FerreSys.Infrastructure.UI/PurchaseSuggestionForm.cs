@@ -27,7 +27,7 @@ public class PurchaseSuggestionForm : Form
 
     private void InitializeComponent()
     {
-        Text = "Sugerido de Compra - FerreSys";
+        Text = "Sugerido de Compra - Posly";
         Size = new Size(920, 560);
         MinimumSize = new Size(720, 420);
         StartPosition = FormStartPosition.CenterParent;

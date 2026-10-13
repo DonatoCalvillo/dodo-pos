@@ -6,7 +6,7 @@ namespace FerreSys.LicenseIssuer;
 
 internal sealed class ActivationService
 {
-    public const int BillingDays = 30;
+    public static readonly DateTime LifetimeExpiry = new(9999, 12, 31, 0, 0, 0, DateTimeKind.Utc);
 
     private readonly string _privateKeyXml;
     private readonly ActivationLedgerStore _ledger;
@@ -17,7 +17,7 @@ internal sealed class ActivationService
         _ledger = ledger;
     }
 
-    public ActivationRecord CreateCode(string email, string customerName)
+    public ActivationRecord CreateCode(string email, string customerName, LicensePlan plan, int? days)
     {
         email = NormalizeEmail(email);
         customerName = customerName.Trim();
@@ -26,40 +26,46 @@ internal sealed class ActivationService
         if (customerName.Length == 0)
             throw new InvalidOperationException("El nombre del cliente es obligatorio.");
 
+        int duration = ResolveDuration(plan, days);
+        DateTime createdAt = DateTime.UtcNow;
         ActivationLedger ledger = _ledger.Load();
         var record = new ActivationRecord
         {
             Code = NewCode(ledger),
             Email = email,
             CustomerName = customerName,
-            CreatedAt = DateTime.UtcNow
+            Plan = plan.ToString(),
+            ExpiresAt = plan == LicensePlan.Lifetime ? null : createdAt.AddDays(duration),
+            CreatedAt = createdAt
         };
         ledger.Records.Add(record);
         _ledger.Save(ledger);
         return record;
     }
 
-    public (SignedLicenseContainer Container, string Code) IssueFile(string email, string customerName, string hardwareId, int days)
+    public (SignedLicenseContainer Container, string Code) IssueFile(
+        string email,
+        string customerName,
+        string hardwareId,
+        LicensePlan plan,
+        int? days)
     {
         email = NormalizeEmail(email);
         customerName = customerName.Trim();
         hardwareId = hardwareId.Trim();
         if (email.Length == 0 || customerName.Length == 0 || hardwareId.Length == 0)
             throw new InvalidOperationException("Correo, nombre y hardware id son obligatorios.");
-        if (days < 1)
-            throw new InvalidOperationException("Los días de vigencia deben ser al menos 1.");
 
+        int duration = ResolveDuration(plan, days);
         DateTime issuedAt = DateTime.UtcNow;
-        var payload = new LicensePayload
-        {
-            CustomerName = customerName,
-            CustomerEmail = email,
-            PlanName = "Premium",
-            HardwareId = hardwareId,
-            IssuedAt = issuedAt,
-            ExpiresAt = issuedAt.AddDays(days),
-            GraceDays = 5
-        };
+        var payload = BuildPayload(
+            Guid.NewGuid().ToString(),
+            customerName,
+            email,
+            plan,
+            hardwareId,
+            issuedAt,
+            plan == LicensePlan.Lifetime ? null : issuedAt.AddDays(duration));
 
         ActivationLedger ledger = _ledger.Load();
         string code = NewCode(ledger);
@@ -68,10 +74,11 @@ internal sealed class ActivationService
             Code = code,
             Email = email,
             CustomerName = customerName,
+            Plan = plan.ToString(),
             HardwareId = hardwareId,
             LicenseId = payload.LicenseId,
             IssuedAt = payload.IssuedAt,
-            ExpiresAt = payload.ExpiresAt,
+            ExpiresAt = plan == LicensePlan.Lifetime ? null : payload.ExpiresAt,
             CreatedAt = issuedAt
         });
         _ledger.Save(ledger);
@@ -80,14 +87,28 @@ internal sealed class ActivationService
 
     public void Revoke(string code)
     {
-        string normalized = NormalizeCode(code);
         ActivationLedger ledger = _ledger.Load();
-        ActivationRecord? record = ledger.Records.FirstOrDefault(item =>
-            string.Equals(item.Code, normalized, StringComparison.OrdinalIgnoreCase));
-        if (record == null)
-            throw new InvalidOperationException("No existe ese código de activación.");
-
+        ActivationRecord record = RequireRecord(ledger, code);
         record.Revoked = true;
+        _ledger.Save(ledger);
+    }
+
+    public void Extend(string code, int? days)
+    {
+        ActivationLedger ledger = _ledger.Load();
+        ActivationRecord record = RequireRecord(ledger, code);
+        if (record.Revoked)
+            throw new InvalidOperationException("Este código fue revocado.");
+
+        LicensePlan plan = ParseStoredPlan(record.Plan);
+        if (plan == LicensePlan.Lifetime)
+            throw new InvalidOperationException("La licencia vitalicia no vence.");
+
+        int duration = ResolveDuration(plan, days);
+        DateTime start = record.ExpiresAt.HasValue && record.ExpiresAt.Value > DateTime.UtcNow
+            ? record.ExpiresAt.Value
+            : DateTime.UtcNow;
+        record.ExpiresAt = start.AddDays(duration);
         _ledger.Save(ledger);
     }
 
@@ -112,30 +133,31 @@ internal sealed class ActivationService
             throw new InvalidOperationException("Este código ya está activado en otra computadora.");
         }
 
+        LicensePlan plan = ParseStoredPlan(record.Plan);
         DateTime issuedAt = record.IssuedAt ?? DateTime.UtcNow;
-        DateTime expiresAt = record.ExpiresAt ?? issuedAt.AddDays(BillingDays);
+        DateTime? expiresAt = record.ExpiresAt;
         if (string.IsNullOrWhiteSpace(record.HardwareId))
         {
             issuedAt = DateTime.UtcNow;
-            expiresAt = issuedAt.AddDays(BillingDays);
+            if (plan != LicensePlan.Lifetime && expiresAt == null)
+                expiresAt = issuedAt.AddDays(LicensePlanInfo.DefaultDays(plan));
+
             record.HardwareId = hardwareId;
             record.LicenseId = Guid.NewGuid().ToString();
             record.IssuedAt = issuedAt;
             record.ExpiresAt = expiresAt;
+            record.Plan = plan.ToString();
             _ledger.Save(ledger);
         }
 
-        var payload = new LicensePayload
-        {
-            LicenseId = record.LicenseId ?? Guid.NewGuid().ToString(),
-            CustomerName = record.CustomerName,
-            CustomerEmail = record.Email,
-            PlanName = "Premium",
-            HardwareId = hardwareId,
-            IssuedAt = issuedAt,
-            ExpiresAt = expiresAt,
-            GraceDays = 5
-        };
+        LicensePayload payload = BuildPayload(
+            record.LicenseId ?? Guid.NewGuid().ToString(),
+            record.CustomerName,
+            record.Email,
+            plan,
+            hardwareId,
+            issuedAt,
+            expiresAt);
         record.LicenseId = payload.LicenseId;
         _ledger.Save(ledger);
         return LicenseSigner.Sign(payload, _privateKeyXml);
@@ -160,25 +182,67 @@ internal sealed class ActivationService
             throw new InvalidOperationException("La renovación no corresponde a esta licencia.");
         }
 
-        DateTime start = record.ExpiresAt.HasValue && record.ExpiresAt.Value > DateTime.UtcNow
-            ? record.ExpiresAt.Value
-            : DateTime.UtcNow;
-        record.ExpiresAt = start.AddDays(BillingDays);
-        record.IssuedAt = DateTime.UtcNow;
-        _ledger.Save(ledger);
-
-        var payload = new LicensePayload
-        {
-            LicenseId = record.LicenseId!,
-            CustomerName = record.CustomerName,
-            CustomerEmail = record.Email,
-            PlanName = "Premium",
-            HardwareId = hardwareId,
-            IssuedAt = record.IssuedAt.Value,
-            ExpiresAt = record.ExpiresAt.Value,
-            GraceDays = 5
-        };
+        LicensePlan plan = ParseStoredPlan(record.Plan);
+        LicensePayload payload = BuildPayload(
+            record.LicenseId!,
+            record.CustomerName,
+            record.Email,
+            plan,
+            hardwareId,
+            record.IssuedAt ?? DateTime.UtcNow,
+            record.ExpiresAt);
         return LicenseSigner.Sign(payload, _privateKeyXml);
+    }
+
+    private static ActivationRecord RequireRecord(ActivationLedger ledger, string code)
+    {
+        string normalized = NormalizeCode(code);
+        ActivationRecord? record = ledger.Records.FirstOrDefault(item =>
+            string.Equals(item.Code, normalized, StringComparison.OrdinalIgnoreCase));
+        if (record == null)
+            throw new InvalidOperationException("No existe ese código de activación.");
+        return record;
+    }
+
+    private static LicensePayload BuildPayload(
+        string licenseId,
+        string customerName,
+        string email,
+        LicensePlan plan,
+        string hardwareId,
+        DateTime issuedAt,
+        DateTime? expiresAt)
+    {
+        return new LicensePayload
+        {
+            LicenseId = licenseId,
+            CustomerName = customerName,
+            CustomerEmail = email,
+            Plan = plan,
+            PlanName = LicensePlanInfo.DisplayName(plan),
+            HardwareId = hardwareId,
+            IssuedAt = issuedAt,
+            ExpiresAt = plan == LicensePlan.Lifetime ? LifetimeExpiry : expiresAt ?? issuedAt,
+            GraceDays = plan == LicensePlan.Lifetime ? 0 : 5
+        };
+    }
+
+    private static int ResolveDuration(LicensePlan plan, int? days)
+    {
+        if (plan == LicensePlan.Lifetime)
+            return 0;
+        if (days is < 1)
+            throw new InvalidOperationException("Los días de vigencia deben ser al menos 1.");
+        return days ?? LicensePlanInfo.DefaultDays(plan);
+    }
+
+    private static LicensePlan ParseStoredPlan(string? plan)
+    {
+        if (string.IsNullOrWhiteSpace(plan))
+            return LicensePlan.Monthly;
+        if (!LicensePlanInfo.TryParse(plan, out LicensePlan parsed))
+            return LicensePlan.Monthly;
+        return parsed;
     }
 
     private static string NormalizeEmail(string email) => email.Trim();

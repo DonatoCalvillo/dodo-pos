@@ -10,11 +10,13 @@ public sealed class LicenseForm : Form
     private readonly TextBox _email = new();
     private readonly TextBox _code = new();
     private readonly Button _activate = new();
+    private readonly bool _required;
 
-    public LicenseForm(LocalSubscriptionService subscription)
+    public LicenseForm(LocalSubscriptionService subscription, bool required = false)
     {
         _subscription = subscription;
-        Text = "Licencia - FerreSys";
+        _required = required;
+        Text = "Licencia - Posly";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -74,7 +76,14 @@ public sealed class LicenseForm : Form
         var import = new Button { Text = "Importar archivo .lic", AutoSize = true, Font = UiTheme.Ui };
         import.Click += (_, _) => ImportFile();
 
-        var close = new Button { Text = "Cerrar", Width = 90, Height = 28, DialogResult = DialogResult.OK, Font = UiTheme.Ui };
+        var close = new Button
+        {
+            Text = required ? "Salir" : "Cerrar",
+            Width = 90,
+            Height = 28,
+            DialogResult = required ? DialogResult.Cancel : DialogResult.OK,
+            Font = UiTheme.Ui
+        };
 
         layout.Controls.Add(_status, 0, 0);
         layout.SetColumnSpan(_status, 2);
@@ -102,22 +111,22 @@ public sealed class LicenseForm : Form
 
     private void ShowStatus()
     {
-        var license = _subscription.CurrentLicense;
-        if (_subscription.GetCurrentTier() == FerreSys.Domain.SubscriptionTier.Premium && license != null)
-        {
-            _status.Text = "Plan Premium";
-            _status.ForeColor = UiTheme.StatusOk;
-            _detail.Text =
-                $"{license.CustomerName}\n" +
-                $"Vence: {license.ExpiresAt.ToLocalTime():dd/MM/yyyy}  (gracia {license.GraceDays} días)";
-            return;
-        }
+        bool paid = _subscription.GetCurrentTier() == FerreSys.Domain.SubscriptionTier.Premium;
+        _status.Text = LicensePresentation.Title(_subscription);
+        _status.ForeColor = paid ? UiTheme.StatusOk : UiTheme.StatusWarn;
+        string detail = LicensePresentation.Detail(_subscription);
+        if (!paid && !string.IsNullOrWhiteSpace(_subscription.LastError))
+            detail = _subscription.LastError;
+        _detail.Text = detail;
+    }
 
-        _status.Text = "Plan gratuito";
-        _status.ForeColor = UiTheme.StatusWarn;
-        _detail.Text = string.IsNullOrWhiteSpace(_subscription.LastError)
-            ? "Hasta 200 productos. El respaldo en la nube requiere Premium."
-            : _subscription.LastError;
+    private void FinishIfRequired()
+    {
+        if (!_required || _subscription.GetCurrentTier() != FerreSys.Domain.SubscriptionTier.Premium)
+            return;
+
+        DialogResult = DialogResult.OK;
+        Close();
     }
 
     private async Task ActivateAsync()
@@ -155,6 +164,7 @@ public sealed class LicenseForm : Form
 
             ShowStatus();
             MessageBox.Show("Licencia activada.", "Licencia", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            FinishIfRequired();
         }
         finally
         {
@@ -167,7 +177,7 @@ public sealed class LicenseForm : Form
         using var dialog = new OpenFileDialog
         {
             Title = "Archivo de licencia",
-            Filter = "Licencia FerreSys|*.lic|Todos los archivos|*.*"
+            Filter = "Licencia Posly|*.lic|Todos los archivos|*.*"
         };
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
@@ -190,6 +200,7 @@ public sealed class LicenseForm : Form
 
             ShowStatus();
             MessageBox.Show("Licencia importada.", "Licencia", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            FinishIfRequired();
         }
         catch (Exception ex)
         {

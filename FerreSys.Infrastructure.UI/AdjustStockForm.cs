@@ -20,7 +20,7 @@ public partial class AdjustStockForm : Form
 
     private void InitializeComponent()
     {
-        this.Text = "Auditoría de Inventario - FerreSys";
+        this.Text = "Auditoría de Inventario - Posly";
         this.Size = new Size(400, 260);
         this.FormBorderStyle = FormBorderStyle.FixedDialog;
         this.MaximizeBox = false;

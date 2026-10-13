@@ -40,7 +40,7 @@ public class KardexForm : Form
 
     private void InitializeComponent()
     {
-        Text = "Kárdex de inventario - FerreSys";
+        Text = "Kárdex de inventario - Posly";
         Size = new Size(980, 620);
         MinimumSize = new Size(800, 480);
         StartPosition = FormStartPosition.CenterParent;

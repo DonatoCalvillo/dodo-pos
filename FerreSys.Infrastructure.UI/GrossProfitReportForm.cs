@@ -23,7 +23,7 @@ public class GrossProfitReportForm : Form
 
     private void InitializeComponent()
     {
-        Text = "Utilidad bruta y ganancia neta - FerreSys";
+        Text = "Utilidad bruta y ganancia neta - Posly";
         Size = new Size(480, 460);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;

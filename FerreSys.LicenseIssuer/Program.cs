@@ -31,6 +31,9 @@ internal static class Program
                 case "revoke":
                     Revoke(options);
                     return 0;
+                case "extend":
+                    Extend(options);
+                    return 0;
                 case "serve":
                     Serve(options);
                     return 0;
@@ -82,10 +85,6 @@ internal static class Program
 
     private static void Issue(Dictionary<string, string> options)
     {
-        int days = 30;
-        if (options.TryGetValue("days", out string? daysText) && !int.TryParse(daysText, out days))
-            throw new InvalidOperationException("El valor de --days no es un número.");
-
         string output = options.TryGetValue("output", out string? outputPath) && !string.IsNullOrWhiteSpace(outputPath)
             ? outputPath
             : Path.Combine(Environment.CurrentDirectory, "license.lic");
@@ -95,7 +94,8 @@ internal static class Program
             Required(options, "email"),
             Required(options, "name"),
             Required(options, "hardware"),
-            days);
+            ReadPlan(options),
+            ReadDays(options));
 
         string? folder = Path.GetDirectoryName(output);
         if (!string.IsNullOrEmpty(folder))
@@ -110,8 +110,22 @@ internal static class Program
 
     private static void Code(Dictionary<string, string> options)
     {
-        ActivationRecord record = CreateService().CreateCode(Required(options, "email"), Required(options, "name"));
+        ActivationRecord record = CreateService().CreateCode(
+            Required(options, "email"),
+            Required(options, "name"),
+            ReadPlan(options),
+            ReadDays(options));
         Console.WriteLine(record.Code);
+        Console.WriteLine(record.Plan);
+        Console.WriteLine(record.ExpiresAt?.ToString("yyyy-MM-dd") ?? "sin vencimiento");
+    }
+
+    private static void Extend(Dictionary<string, string> options)
+    {
+        ActivationService service = CreateService();
+        string code = Required(options, "code");
+        service.Extend(code, ReadDays(options));
+        Console.WriteLine("Vigencia actualizada.");
     }
 
     private static void Revoke(Dictionary<string, string> options)
@@ -145,6 +159,24 @@ internal static class Program
         return new ActivationService(privateXml, new ActivationLedgerStore(IssuerPaths.LedgerPath));
     }
 
+    private static LicensePlan ReadPlan(Dictionary<string, string> options)
+    {
+        if (!options.TryGetValue("plan", out string? plan) || string.IsNullOrWhiteSpace(plan))
+            return LicensePlan.Monthly;
+        if (!LicensePlanInfo.TryParse(plan, out LicensePlan parsed))
+            throw new InvalidOperationException("El plan debe ser monthly, annual o lifetime.");
+        return parsed;
+    }
+
+    private static int? ReadDays(Dictionary<string, string> options)
+    {
+        if (!options.TryGetValue("days", out string? daysText))
+            return null;
+        if (!int.TryParse(daysText, out int days))
+            throw new InvalidOperationException("El valor de --days no es un número.");
+        return days;
+    }
+
     private static string Required(Dictionary<string, string> options, string name)
     {
         if (!options.TryGetValue(name, out string? value) || string.IsNullOrWhiteSpace(value))
@@ -175,9 +207,10 @@ internal static class Program
         Console.WriteLine("""
             FerreSys.LicenseIssuer
               keygen [--force] [--public-out ruta.xml]
-              code --email correo --name "Nombre"
+              code --email correo --name "Nombre" [--plan monthly|annual|lifetime] [--days N]
+              extend --code FS-XXXX-XXXX [--days N]
               revoke --code FS-XXXX-XXXX
-              issue --email correo --name "Nombre" --hardware ID [--days 30] [--output license.lic]
+              issue --email correo --name "Nombre" --hardware ID [--plan monthly|annual|lifetime] [--days N] [--output license.lic]
               serve [--port 5080]
             La llave privada queda en %USERPROFILE%\.ferresys\licensing\private.xml
             """);

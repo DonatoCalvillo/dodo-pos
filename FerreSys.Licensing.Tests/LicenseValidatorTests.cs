@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using FerreSys.Domain;
 using FerreSys.Licensing;
 using Xunit;
@@ -71,6 +73,67 @@ public sealed class LicenseValidatorTests : IDisposable
         LicenseValidationResult result = Validator().ValidateContainer(container);
 
         Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void AnnualPastGrace_IsRejected()
+    {
+        LicensePayload payload = Sample(_now.AddDays(-10));
+        payload.Plan = LicensePlan.Annual;
+        payload.PlanName = "Anual";
+        LicenseValidationResult result = Validator().ValidateContainer(Sign(payload));
+
+        Assert.False(result.IsValid);
+        Assert.Equal("Su suscripción ha expirado.", result.Error);
+    }
+
+    [Fact]
+    public void Lifetime_IgnoresExpiry()
+    {
+        LicensePayload payload = Sample(_now.AddDays(-400));
+        payload.Plan = LicensePlan.Lifetime;
+        payload.PlanName = "Vitalicia";
+        LicenseValidationResult result = Validator().ValidateContainer(Sign(payload));
+
+        Assert.True(result.IsValid);
+        Assert.Equal(LicensePlan.Lifetime, result.Payload?.Plan);
+    }
+
+    [Fact]
+    public void LegacyPremiumName_StillExpires()
+    {
+        LicensePayload payload = Sample(_now.AddDays(30));
+        payload.PlanName = "Premium";
+        LicenseValidationResult result = Validator().ValidateContainer(Sign(payload));
+
+        Assert.True(result.IsValid);
+        Assert.Equal(LicensePlan.Monthly, result.Payload?.Plan);
+        Assert.Equal("Premium", result.Payload?.PlanName);
+    }
+
+    [Fact]
+    public void MissingPlanField_IsMonthly()
+    {
+        string json = JsonSerializer.Serialize(Sample(_now.AddDays(30)), LicenseJson.Options);
+        json = json.Replace("\"Plan\":0,", "", StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Plan\"", json, StringComparison.Ordinal);
+
+        using RSA rsa = RSA.Create();
+        rsa.FromXmlString(_privateXml);
+        byte[] signature = rsa.SignData(
+            Encoding.UTF8.GetBytes(json),
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var container = new SignedLicenseContainer
+        {
+            JsonPayload = json,
+            Signature = Convert.ToBase64String(signature)
+        };
+
+        LicenseValidationResult result = Validator().ValidateContainer(container);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(LicensePlan.Monthly, result.Payload?.Plan);
     }
 
     [Fact]

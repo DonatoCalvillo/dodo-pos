@@ -48,7 +48,7 @@ public sealed class BusinessProfileForm : Form
 
     private void BuildUi()
     {
-        Text = "Datos del negocio - FerreSys";
+        Text = "Datos del negocio - Posly";
         Size = new Size(980, 800);
         MinimumSize = new Size(900, 740);
         StartPosition = FormStartPosition.CenterParent;
@@ -78,7 +78,7 @@ public sealed class BusinessProfileForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 168));
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         left.Controls.Add(CreateIdentity(), 0, 0);
         left.Controls.Add(CreateContact(), 0, 1);
@@ -176,20 +176,32 @@ public sealed class BusinessProfileForm : Form
     private Control CreateLicense()
     {
         var gb = UiHelp.CreateGroupBox("Licencia");
-        var host = new FlowLayoutPanel
+        var host = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Padding = new Padding(8, 14, 8, 4)
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(8, 14, 8, 4),
+            BackColor = UiTheme.PanelBg
         };
-        var button = new Button { Text = "Administrar licencia", AutoSize = true, Font = UiTheme.Ui };
+        host.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        var summary = new Label
+        {
+            Text = LicensePresentation.Title(_subscription) + "\n" + LicensePresentation.Detail(_subscription),
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Font = UiTheme.Ui
+        };
+        var button = new Button { Text = "Administrar licencia", AutoSize = true, Font = UiTheme.Ui, Anchor = AnchorStyles.Left };
         button.Click += (_, _) =>
         {
             using var form = new LicenseForm(_subscription);
             form.ShowDialog(this);
+            summary.Text = LicensePresentation.Title(_subscription) + "\n" + LicensePresentation.Detail(_subscription);
         };
-        host.Controls.Add(button);
+        host.Controls.Add(summary, 0, 0);
+        host.Controls.Add(button, 0, 1);
         gb.Controls.Add(host);
         return gb;
     }

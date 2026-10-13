@@ -24,7 +24,7 @@ internal sealed class WindowsRawPrinter : IThermalPrinter
         {
             var doc = new DOCINFOA
             {
-                pDocName = "FerreSys Ticket",
+                pDocName = "Posly Ticket",
                 pDataType = "RAW"
             };
 

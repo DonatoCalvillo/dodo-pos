@@ -19,7 +19,7 @@ static class Program
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "FerreSys", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(ex.Message, "Posly", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

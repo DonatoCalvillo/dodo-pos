@@ -33,7 +33,7 @@ public partial class SalesHistoryForm : Form
 
     private void InitializeComponent()
     {
-        this.Text = "Control de Caja Avanzado e Historial de Ventas - FerreSys";
+        this.Text = "Control de Caja Avanzado e Historial de Ventas - Posly";
         this.Size = new Size(1000, 600);
         this.StartPosition = FormStartPosition.CenterParent;
 

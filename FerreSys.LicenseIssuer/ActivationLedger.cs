@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FerreSys.Domain;
 using FerreSys.Licensing;
 
 namespace FerreSys.LicenseIssuer;
@@ -8,6 +9,7 @@ internal sealed class ActivationRecord
     public string Code { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
+    public string Plan { get; set; } = LicensePlan.Monthly.ToString();
     public string? HardwareId { get; set; }
     public string? LicenseId { get; set; }
     public DateTime? IssuedAt { get; set; }

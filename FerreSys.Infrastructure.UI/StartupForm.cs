@@ -1,3 +1,4 @@
+using FerreSys.Domain;
 using FerreSys.Infrastructure.Persistence;
 
 namespace FerreSys.Infrastructure.UI;
@@ -14,7 +15,7 @@ internal sealed class StartupForm : Form
         _args = args;
         Color background = SampleBackground();
 
-        Text = "FerreSys";
+        Text = "Posly";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(720, 460);
@@ -83,8 +84,25 @@ internal sealed class StartupForm : Form
         if (IsDisposed)
             return;
 
+        var subscription = new LocalSubscriptionService();
+        bool paid = subscription.GetCurrentTier() == SubscriptionTier.Premium;
+        bool trial = !paid && subscription.ReadTrial(recordLastSeen: true).IsActive;
+        if (!paid && !trial)
+        {
+            using var gate = new LicenseForm(subscription, required: true);
+            if (gate.ShowDialog(this) != DialogResult.OK
+                || subscription.GetCurrentTier() != SubscriptionTier.Premium)
+            {
+                Close();
+                return;
+            }
+        }
+
+        if (IsDisposed)
+            return;
+
         Hide();
-        var main = new Form1(_args);
+        var main = new Form1(_args, subscription);
         main.FormClosed += (_, _) => Close();
         main.Show();
     }
