@@ -28,6 +28,9 @@ public sealed class PeripheralSettings
     public string ScannerSerialPort { get; init; } = string.Empty;
     public int ScannerBaudRate { get; init; } = 9600;
     public bool ScannerAddToCart { get; init; } = true;
+    public bool ScaleEnabled { get; init; }
+    public string ScaleSerialPort { get; init; } = string.Empty;
+    public int ScaleBaudRate { get; init; } = 9600;
 
     public bool HasPrinterConfigured => PrinterTransport switch
     {
@@ -36,6 +39,11 @@ public sealed class PeripheralSettings
         PrinterTransport.Network => !string.IsNullOrWhiteSpace(NetworkHost) && NetworkPort is > 0 and <= 65535,
         _ => false
     };
+
+    public bool HasScaleConfigured =>
+        ScaleEnabled
+        && !string.IsNullOrWhiteSpace(ScaleSerialPort)
+        && ScaleBaudRate > 0;
 
     public static PeripheralSettings Default() => new();
 }

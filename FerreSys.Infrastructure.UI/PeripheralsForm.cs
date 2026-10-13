@@ -24,7 +24,13 @@ public sealed class PeripheralsForm : Form
     private CheckBox chkScannerAddToCart = null!;
     private Label lblLastScan = null!;
 
+    private CheckBox chkScale = null!;
+    private ComboBox cmbScalePort = null!;
+    private ComboBox cmbScaleBaud = null!;
+    private Label lblLastWeight = null!;
+
     private SerialBarcodeScanner? _testScanner;
+    private SerialScaleReader? _testScale;
 
     public PeripheralsForm(IAppSettingsStore settings)
     {
@@ -33,7 +39,12 @@ public sealed class PeripheralsForm : Form
         LoadSettings();
         UpdateTransportState();
         UpdateScannerState();
-        FormClosed += (_, _) => StopTestScanner();
+        UpdateScaleState();
+        FormClosed += (_, _) =>
+        {
+            StopTestScanner();
+            StopTestScale();
+        };
     }
 
     private void BuildUi()
@@ -61,6 +72,7 @@ public sealed class PeripheralsForm : Form
         var tabs = new TabControl { Dock = DockStyle.Fill, Font = UiTheme.Ui };
         tabs.TabPages.Add(CreatePrinterTab());
         tabs.TabPages.Add(CreateScannerTab());
+        tabs.TabPages.Add(CreateScaleTab());
 
         root.Controls.Add(tabs, 0, 0);
         root.Controls.Add(CreateActions(), 0, 1);
@@ -224,6 +236,56 @@ public sealed class PeripheralsForm : Form
         return page;
     }
 
+    private TabPage CreateScaleTab()
+    {
+        var page = new TabPage("Báscula") { BackColor = UiTheme.WindowBg, Padding = new Padding(8) };
+        var gb = UiHelp.CreateGroupBox("Báscula de peso", SectionHelpText.PeripheralsScale);
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 5,
+            Padding = new Padding(8, 16, 8, 8),
+            BackColor = UiTheme.PanelBg
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        chkScale = new CheckBox
+        {
+            Text = "Usar báscula al vender kilogramos",
+            Dock = DockStyle.Fill,
+            Font = UiTheme.Ui
+        };
+        chkScale.CheckedChanged += (_, _) => UpdateScaleState();
+        cmbScalePort = DropDown();
+        cmbScaleBaud = BaudCombo();
+        lblLastWeight = new Label
+        {
+            Text = "Último peso: —",
+            Dock = DockStyle.Fill,
+            Font = UiTheme.UiBold,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        var btnListen = new Button { Text = "Probar lectura", AutoSize = true, Font = UiTheme.Ui };
+        btnListen.Click += (_, _) => StartScaleTest();
+
+        AddRow(grid, 0, "En venta", chkScale);
+        AddRow(grid, 1, "Puerto COM", cmbScalePort);
+        AddRow(grid, 2, "Velocidad (baudios)", cmbScaleBaud);
+        AddRow(grid, 3, "", btnListen);
+        AddRow(grid, 4, "Resultado", lblLastWeight);
+
+        gb.Controls.Add(grid);
+        page.Controls.Add(gb);
+        return page;
+    }
+
     private Panel CreateActions()
     {
         var panel = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.WindowBg };
@@ -264,6 +326,10 @@ public sealed class PeripheralsForm : Form
         SelectPort(cmbScannerPort, devices.ScannerSerialPort);
         SelectText(cmbScannerBaud, devices.ScannerBaudRate.ToString());
         chkScannerAddToCart.Checked = devices.ScannerAddToCart;
+
+        chkScale.Checked = devices.ScaleEnabled;
+        SelectPort(cmbScalePort, devices.ScaleSerialPort);
+        SelectText(cmbScaleBaud, devices.ScaleBaudRate.ToString());
     }
 
     private void RefreshDevices(bool keepSelection)
@@ -271,10 +337,12 @@ public sealed class PeripheralsForm : Form
         string? printer = keepSelection ? cmbWindowsPrinter.Text : null;
         string? printerPort = keepSelection ? PeripheralDiscovery.PortNameOf(cmbPrinterPort.Text) : null;
         string? scannerPort = keepSelection ? PeripheralDiscovery.PortNameOf(cmbScannerPort.Text) : null;
+        string? scalePort = keepSelection ? PeripheralDiscovery.PortNameOf(cmbScalePort.Text) : null;
 
         Fill(cmbWindowsPrinter, PeripheralDiscovery.PrinterChoices(), printer);
         FillPorts(cmbPrinterPort, printerPort);
         FillPorts(cmbScannerPort, scannerPort);
+        FillPorts(cmbScalePort, scalePort);
     }
 
     private void OnWindowsPrinterChanged()
@@ -303,6 +371,15 @@ public sealed class PeripheralsForm : Form
         cmbScannerBaud.Enabled = serial;
         if (!serial)
             StopTestScanner();
+    }
+
+    private void UpdateScaleState()
+    {
+        bool enabled = chkScale.Checked;
+        cmbScalePort.Enabled = enabled;
+        cmbScaleBaud.Enabled = enabled;
+        if (!enabled)
+            StopTestScale();
     }
 
     private void SaveAndClose()
@@ -352,10 +429,33 @@ public sealed class PeripheralsForm : Form
             return;
         }
 
+        if (devices.ScaleEnabled && string.IsNullOrWhiteSpace(devices.ScaleSerialPort))
+        {
+            MessageBox.Show("Selecciona el puerto COM de la báscula.", "Báscula", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (devices.ScaleEnabled
+            && devices.PrinterTransport == PrinterTransport.Serial
+            && string.Equals(devices.ScaleSerialPort, devices.PrinterSerialPort, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("La impresora y la báscula no pueden usar el mismo puerto COM.", "Periféricos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (devices.ScaleEnabled
+            && devices.ScannerMode == ScannerMode.Serial
+            && string.Equals(devices.ScaleSerialPort, devices.ScannerSerialPort, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("El escáner y la báscula no pueden usar el mismo puerto COM.", "Periféricos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
         try
         {
             _settings.SavePeripheralSettings(devices);
             StopTestScanner();
+            StopTestScale();
             DialogResult = DialogResult.OK;
             Close();
         }
@@ -458,6 +558,52 @@ public sealed class PeripheralsForm : Form
         _testScanner = null;
     }
 
+    private void StartScaleTest()
+    {
+        if (!chkScale.Checked)
+        {
+            lblLastWeight.Text = "Activa la báscula para probar la lectura.";
+            return;
+        }
+
+        string? port = PeripheralDiscovery.PortNameOf(cmbScalePort.Text);
+        if (string.IsNullOrWhiteSpace(port))
+        {
+            MessageBox.Show("No hay puertos COM detectados para la báscula.", "Báscula", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        try
+        {
+            StopTestScale();
+            _testScale = new SerialScaleReader();
+            _testScale.WeightReceived += (_, reading) =>
+            {
+                if (IsDisposed)
+                    return;
+                BeginInvoke(() => lblLastWeight.Text = FormatScaleReading(reading));
+            };
+            _testScale.Start(port, SelectedBaud(cmbScaleBaud));
+            lblLastWeight.Text = $"Escuchando {port}. Coloca un peso…";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Báscula", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void StopTestScale()
+    {
+        _testScale?.Dispose();
+        _testScale = null;
+    }
+
+    private static string FormatScaleReading(ScaleReading reading)
+    {
+        string state = reading.Stable ? "estable" : "inestable";
+        return $"Último peso: {reading.Kilograms.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture)} kg ({state})";
+    }
+
     private PeripheralSettings ReadDevices() => new()
     {
         PrinterTransport = Selected(cmbTransport, PrinterTransport.None),
@@ -471,7 +617,10 @@ public sealed class PeripheralsForm : Form
         ScannerMode = rbSerial.Checked ? ScannerMode.Serial : ScannerMode.Keyboard,
         ScannerSerialPort = PeripheralDiscovery.PortNameOf(cmbScannerPort.Text),
         ScannerBaudRate = SelectedBaud(cmbScannerBaud),
-        ScannerAddToCart = chkScannerAddToCart.Checked
+        ScannerAddToCart = chkScannerAddToCart.Checked,
+        ScaleEnabled = chkScale.Checked,
+        ScaleSerialPort = PeripheralDiscovery.PortNameOf(cmbScalePort.Text),
+        ScaleBaudRate = SelectedBaud(cmbScaleBaud)
     };
 
     private static TextBox Field() => new() { Dock = DockStyle.Fill, Font = UiTheme.Ui };

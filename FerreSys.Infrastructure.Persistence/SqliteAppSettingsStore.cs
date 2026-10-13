@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using FerreSys.Domain;
 using Microsoft.Data.Sqlite;
 
@@ -104,7 +105,10 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
             ScannerMode = ParseEnum(Get(values, "scanner.mode", nameof(ScannerMode.Keyboard)), ScannerMode.Keyboard),
             ScannerSerialPort = Get(values, "scanner.serialPort", string.Empty),
             ScannerBaudRate = ParseInt(Get(values, "scanner.baudRate", "9600"), 9600),
-            ScannerAddToCart = Get(values, "scanner.addToCart", "1") != "0"
+            ScannerAddToCart = Get(values, "scanner.addToCart", "1") != "0",
+            ScaleEnabled = Get(values, "scale.enabled", "0") == "1",
+            ScaleSerialPort = Get(values, "scale.serialPort", string.Empty),
+            ScaleBaudRate = ParseInt(Get(values, "scale.baudRate", "9600"), 9600)
         };
     }
 
@@ -137,6 +141,35 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
         });
     }
 
+    public LocalBackupSettings GetLocalBackupSettings()
+    {
+        var values = ReadAll();
+        int hours = LocalBackupSettings.Normalize(ParseInt(Get(values, "backup.intervalHours", "0"), 0));
+        string raw = Get(values, "backup.lastUtc", string.Empty);
+        DateTime? last = null;
+        if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime parsed))
+            last = parsed.Kind == DateTimeKind.Utc ? parsed : parsed.ToUniversalTime();
+
+        return new LocalBackupSettings
+        {
+            IntervalHours = hours,
+            LastBackupUtc = last
+        };
+    }
+
+    public void SaveLocalBackupSettings(LocalBackupSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        string last = settings.LastBackupUtc is DateTime utc
+            ? utc.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture)
+            : string.Empty;
+        Write(new Dictionary<string, string>
+        {
+            ["backup.intervalHours"] = LocalBackupSettings.Normalize(settings.IntervalHours).ToString(CultureInfo.InvariantCulture),
+            ["backup.lastUtc"] = last
+        });
+    }
+
     public void SavePeripheralSettings(PeripheralSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -153,7 +186,41 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
             ["scanner.mode"] = settings.ScannerMode.ToString(),
             ["scanner.serialPort"] = settings.ScannerSerialPort.Trim(),
             ["scanner.baudRate"] = settings.ScannerBaudRate.ToString(CultureInfo.InvariantCulture),
-            ["scanner.addToCart"] = settings.ScannerAddToCart ? "1" : "0"
+            ["scanner.addToCart"] = settings.ScannerAddToCart ? "1" : "0",
+            ["scale.enabled"] = settings.ScaleEnabled ? "1" : "0",
+            ["scale.serialPort"] = settings.ScaleSerialPort.Trim(),
+            ["scale.baudRate"] = settings.ScaleBaudRate.ToString(CultureInfo.InvariantCulture)
+        });
+    }
+
+    public ReportPreferences GetReportPreferences()
+    {
+        var values = ReadAll();
+        string json = Get(values, "reports.view", string.Empty);
+        if (string.IsNullOrWhiteSpace(json))
+            return new ReportPreferences();
+
+        try
+        {
+            ReportPreferences? loaded = JsonSerializer.Deserialize<ReportPreferences>(json);
+            if (loaded == null)
+                return new ReportPreferences();
+
+            loaded.Series ??= new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            return loaded;
+        }
+        catch (JsonException)
+        {
+            return new ReportPreferences();
+        }
+    }
+
+    public void SaveReportPreferences(ReportPreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        Write(new Dictionary<string, string>
+        {
+            ["reports.view"] = JsonSerializer.Serialize(preferences)
         });
     }
 

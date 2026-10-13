@@ -5,7 +5,6 @@ public enum StockMovementKind
     Venta,
     AjusteAuditoria,
     CargaInicial,
-    /// <summary>Reservado para cuando exista el flujo de devoluciones.</summary>
     Devolucion
 }
 

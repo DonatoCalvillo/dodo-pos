@@ -36,7 +36,9 @@ public class Sale
     public Guid Id { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public List<SaleItem> Items { get; private set; }
-    public decimal Total => Items.Sum(x => x.Subtotal);
+    public decimal Subtotal => Items.Sum(x => x.Subtotal);
+    public decimal DiscountAmount { get; private set; }
+    public decimal Total => Subtotal - DiscountAmount;
     public string PaymentMethod { get; private set; } // "EFECTIVO", "TARJETA" o "MIXTO"
     public string CardReference { get; private set; } // Últimos 4 dígitos o folio (opcional)
     public decimal AmountReceived { get; private set; }
@@ -51,7 +53,8 @@ public class Sale
         string paymentMethod,
         string cardReference,
         decimal amountReceived = 0,
-        decimal cardAmount = 0)
+        decimal cardAmount = 0,
+        decimal discountAmount = 0)
     {
         if (items == null || items.Count == 0)
             throw new ArgumentException("Una venta debe contener al menos un producto.");
@@ -64,6 +67,13 @@ public class Sale
         Items = items;
         PaymentMethod = paymentMethod;
         CardReference = cardReference ?? string.Empty;
+        DiscountAmount = decimal.Round(discountAmount, 2, MidpointRounding.AwayFromZero);
+
+        if (DiscountAmount < 0m)
+            throw new ArgumentException("El descuento de la venta no puede ser negativo.");
+
+        if (DiscountAmount > 0m && DiscountAmount >= Subtotal)
+            throw new ArgumentException("El descuento de la venta debe ser menor al subtotal.");
 
         decimal total = Total;
         decimal roundedCard = decimal.Round(cardAmount, 2, MidpointRounding.AwayFromZero);

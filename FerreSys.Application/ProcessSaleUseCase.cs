@@ -22,7 +22,8 @@ public class ProcessSaleUseCase
         string paymentMethod,
         string cardReference,
         decimal amountReceived = 0,
-        decimal cardAmount = 0)
+        decimal cardAmount = 0,
+        decimal discountAmount = 0)
     {
         if (items == null || items.Count == 0)
             throw new ArgumentException("No hay productos en el carrito para realizar la venta.");
@@ -48,7 +49,7 @@ public class ProcessSaleUseCase
                 product.Barcode,
                 product.Name,
                 item.Quantity,
-                product.RetailPrice,
+                product.ResolveUnitPrice(item.Quantity, DateOnly.FromDateTime(occurredAt)),
                 product.CostPrice,
                 product.Unit
             ));
@@ -71,7 +72,8 @@ public class ProcessSaleUseCase
             paymentMethod,
             cardReference,
             amountReceived,
-            cardAmount);
+            cardAmount,
+            discountAmount);
 
         _productRepository.SaveSaleWithInventory(sale, productsToUpdate, movements);
         return sale;

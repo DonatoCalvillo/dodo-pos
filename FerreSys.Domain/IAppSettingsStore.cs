@@ -15,4 +15,10 @@ public interface IAppSettingsStore
 
     string? GetLicenseKey();
     void SaveLicenseKey(string licenseKey);
+
+    LocalBackupSettings GetLocalBackupSettings();
+    void SaveLocalBackupSettings(LocalBackupSettings settings);
+
+    ReportPreferences GetReportPreferences();
+    void SaveReportPreferences(ReportPreferences preferences);
 }

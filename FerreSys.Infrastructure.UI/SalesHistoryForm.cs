@@ -1,3 +1,4 @@
+using FerreSys.Application;
 using FerreSys.Domain;
 
 namespace FerreSys.Infrastructure.UI;
@@ -6,6 +7,7 @@ public partial class SalesHistoryForm : Form
 {
     private readonly IProductRepository _productRepository;
     private readonly IAppSettingsStore _settings;
+    private readonly ProcessSaleReturnUseCase _processSaleReturnUseCase;
     private readonly Dictionary<Guid, Sale> _headers = new();
 
     // Controles de Filtros Avanzados
@@ -20,11 +22,16 @@ public partial class SalesHistoryForm : Form
     private DataGridView dgvSales = null!;
     private DataGridView dgvDetails = null!;
     private Label lblRevenue = null!;
+    private Button btnReturn = null!;
 
-    public SalesHistoryForm(IProductRepository productRepository, IAppSettingsStore settings)
+    public SalesHistoryForm(
+        IProductRepository productRepository,
+        IAppSettingsStore settings,
+        ProcessSaleReturnUseCase processSaleReturnUseCase)
     {
         _productRepository = productRepository;
         _settings = settings;
+        _processSaleReturnUseCase = processSaleReturnUseCase;
         InitializeComponent();
 
         // Ejecutar búsqueda inicial seteando "Hoy" de forma predeterminada
@@ -100,12 +107,22 @@ public partial class SalesHistoryForm : Form
         Column(dgvDetails, "Sub").FillWeight = 70;
 
         // Reporte final de ingresos acumulados
-        lblRevenue = new Label { Location = new Point(20, 490), Size = new Size(940, 40), Font = new Font("Arial", 14, FontStyle.Bold), ForeColor = Color.DarkGreen, TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Gainsboro };
+        lblRevenue = new Label { Location = new Point(20, 480), Size = new Size(700, 40), Font = new Font("Arial", 12, FontStyle.Bold), ForeColor = Color.DarkGreen, TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Gainsboro };
+        btnReturn = new Button
+        {
+            Text = "Devolver",
+            Location = new Point(740, 484),
+            Size = new Size(220, 36),
+            Enabled = false,
+            BackColor = Color.LightSalmon,
+            Font = new Font("Arial", 9, FontStyle.Bold)
+        };
+        btnReturn.Click += BtnReturn_Click;
 
         // Agregar controles al Formulario
         this.Controls.AddRange(new Control[] {
             lblSearchId, txtSearchId, lblStart, dtpStart, lblEnd, dtpEnd, btnToday, btnYesterday, btnThisWeek,
-            lblTickets, dgvSales, lblDetails, dgvDetails, lblRevenue
+            lblTickets, dgvSales, lblDetails, dgvDetails, lblRevenue, btnReturn
         });
     }
 
@@ -147,28 +164,73 @@ public partial class SalesHistoryForm : Form
     private void DgvSales_SelectionChanged(object? sender, EventArgs e)
     {
         dgvDetails.Rows.Clear();
+        if (btnReturn != null)
+            btnReturn.Enabled = false;
 
-        if (dgvSales.CurrentRow != null)
+        if (dgvSales.CurrentRow == null)
+            return;
+
+        if (dgvSales.CurrentRow.Cells[0].Value is not Guid saleId)
+            return;
+
+        var details = _productRepository.GetSaleDetails(saleId);
+        SaleReturnTotals returned = _productRepository.GetSaleReturnTotals(saleId);
+        var pendingReturn = returned.QuantityByProductId.ToDictionary(pair => pair.Key, pair => pair.Value);
+
+        foreach (var item in details)
         {
-            // Recuperamos el Guid completo guardado de forma segura en la columna 0
-            if (dgvSales.CurrentRow.Cells[0].Value is not Guid saleId)
+            decimal returnedQty = 0m;
+            if (pendingReturn.TryGetValue(item.ProductId, out decimal stillReturned) && stillReturned > 0m)
             {
-                return;
+                decimal sold = decimal.Round(item.Quantity, item.Unit.MaxDecimalPlaces(), MidpointRounding.AwayFromZero);
+                returnedQty = Math.Min(sold, decimal.Round(stillReturned, item.Unit.MaxDecimalPlaces(), MidpointRounding.AwayFromZero));
+                pendingReturn[item.ProductId] = stillReturned - returnedQty;
             }
 
-            var details = _productRepository.GetSaleDetails(saleId);
+            string productName = returnedQty > 0m
+                ? $"{item.ProductName}  (devuelto {item.Unit.FormatQuantity(returnedQty)})"
+                : item.ProductName;
 
-            foreach (var item in details)
+            int rowIndex = dgvDetails.Rows.Add(
+                item.Barcode,
+                productName,
+                item.Unit.FormatQuantity(item.Quantity),
+                $"${item.PriceSold:N2}",
+                $"${item.Subtotal:N2}"
+            );
+
+            if (returnedQty > 0m)
             {
-                dgvDetails.Rows.Add(
-                    item.Barcode,
-                    item.ProductName,
-                    item.Unit.FormatQuantity(item.Quantity),
-                    $"${item.PriceSold:N2}",
-                    $"${item.Subtotal:N2}"
-                );
+                DataGridViewRow row = dgvDetails.Rows[rowIndex];
+                row.DefaultCellStyle.ForeColor = Color.Firebrick;
+                row.DefaultCellStyle.SelectionForeColor = Color.Firebrick;
+                row.DefaultCellStyle.Font = new Font(dgvDetails.Font, FontStyle.Bold);
             }
         }
+
+        if (btnReturn == null)
+            return;
+
+        btnReturn.Enabled = details
+            .GroupBy(item => item.ProductId)
+            .Any(group =>
+            {
+                UnitOfMeasure unit = group.First().Unit;
+                decimal sold = decimal.Round(group.Sum(item => item.Quantity), unit.MaxDecimalPlaces(), MidpointRounding.AwayFromZero);
+                decimal already = decimal.Round(returned.QuantityFor(group.Key), unit.MaxDecimalPlaces(), MidpointRounding.AwayFromZero);
+                return sold - already > 0m;
+            });
+    }
+
+    private void BtnReturn_Click(object? sender, EventArgs e)
+    {
+        if (dgvSales.CurrentRow?.Cells[0].Value is not Guid saleId)
+            return;
+
+        string shortId = Convert.ToString(dgvSales.CurrentRow.Cells["ShortId"].Value) ?? saleId.ToString()[..8].ToUpperInvariant();
+        using var dialog = new ReturnSaleForm(_processSaleReturnUseCase, _productRepository, saleId, shortId);
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            DgvSales_SelectionChanged(dgvSales, EventArgs.Empty);
     }
 
     private void DgvSales_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
@@ -194,7 +256,8 @@ public partial class SalesHistoryForm : Form
             header.PaymentMethod,
             header.CardReference,
             header.AmountReceived,
-            header.CardAmount);
+            header.CardAmount,
+            header.DiscountAmount);
         using var dialog = new ReprintTicketForm(sale, _settings);
         dialog.ShowDialog(this);
     }

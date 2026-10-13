@@ -23,12 +23,41 @@ public partial class Form1 : Form
     private Button btnCloseCart = null!;
     private ToolStripButton btnViewSales = null!;
     private ToolStripButton btnGrossProfit = null!;
+    private ToolStripButton btnReports = null!;
     private ToolStripButton btnPurchaseSuggestion = null!;
     private ToolStripButton btnCashCloseX = null!;
     private ToolStripButton btnCashCloseZ = null!;
     private ToolStripButton btnCashMovements = null!;
     private ToolStripButton btnKardex = null!;
+    private ToolStripButton btnInventory = null!;
     private ToolStripButton btnImportExcel = null!;
+    private ToolStripButton btnHideInventory = null!;
+    private ToolStripButton btnBusiness = null!;
+    private ToolStripButton btnPeripherals = null!;
+    private ToolStripButton btnUsers = null!;
+    private ToolStripMenuItem mnuSales = null!;
+    private ToolStripMenuItem mnuProfit = null!;
+    private ToolStripMenuItem mnuReports = null!;
+    private ToolStripMenuItem mnuSuggestion = null!;
+    private ToolStripMenuItem mnuCashX = null!;
+    private ToolStripMenuItem mnuCashZ = null!;
+    private ToolStripMenuItem mnuCashMovements = null!;
+    private ToolStripMenuItem mnuImport = null!;
+    private ToolStripMenuItem mnuBusiness = null!;
+    private ToolStripMenuItem mnuPeripherals = null!;
+    private ToolStripMenuItem mnuUsers = null!;
+    private ToolStripMenuItem mnuProducts = null!;
+    private ToolStripMenuItem mnuRegisterProduct = null!;
+    private ToolStripMenuItem mnuSuggestionProducts = null!;
+    private ToolStripMenuItem mnuInventory = null!;
+    private ToolStripMenuItem mnuKardex = null!;
+    private ToolStripMenuItem mnuHideInventory = null!;
+    private ToolStripMenuItem mnuSale = null!;
+    private ToolStripMenuItem mnuEditProduct = null!;
+    private ToolStripMenuItem mnuAuditProduct = null!;
+    private ToolStripMenuItem mnuKardexProduct = null!;
+    private ToolStripMenuItem mnuHideProduct = null!;
+    private ToolStripStatusLabel lblSignedIn = null!;
     private ToolStripStatusLabel lblStockAlerts = null!;
     private ToolStripStatusLabel lblLicense = null!;
     private ToolStripLabel lblBrand = null!;
@@ -52,7 +81,9 @@ public partial class Form1 : Form
     private readonly ProcessSaleUseCase _processSaleUseCase;
     private readonly GetDailyCashSummaryUseCase _getDailyCashSummaryUseCase;
     private readonly GetGrossProfitSummaryUseCase _getGrossProfitSummaryUseCase;
+    private readonly ReportsUseCase _reportsUseCase;
     private readonly GetReorderSuggestionsUseCase _getReorderSuggestionsUseCase;
+    private readonly ListInventoryUseCase _listInventoryUseCase;
     private readonly SaveOpeningCashUseCase _saveOpeningCashUseCase;
     private readonly CloseCashDayUseCase _closeCashDayUseCase;
     private readonly GetCashMovementsUseCase _getCashMovementsUseCase;
@@ -66,23 +97,32 @@ public partial class Form1 : Form
     private readonly string[] _startupArgs;
     private readonly SqliteAppSettingsStore _appSettings;
     private readonly CloudBackupService _cloudBackup;
+    private readonly LocalBackupService _localBackup;
+    private readonly System.Windows.Forms.Timer _backupTimer;
     private readonly PrintSaleTicketUseCase _printSaleTicketUseCase;
     private SerialBarcodeScanner? _serialScanner;
     private string? _lastScanCode;
     private decimal _saleTotal = 0;
 
-    public Form1(string[]? startupArgs = null, LocalSubscriptionService? subscription = null)
+    private readonly User _currentUser;
+
+    public bool SessionEnded { get; private set; }
+
+    public Form1(string[]? startupArgs, LocalSubscriptionService subscription, User currentUser)
     {
         _startupArgs = startupArgs ?? [];
+        _currentUser = currentUser;
         _dbContext = new SqliteDbContext();
         _productRepository = new SqliteProductRepository(_dbContext);
-        _subscriptionService = subscription ?? new LocalSubscriptionService();
+        _subscriptionService = subscription;
         _addProductUseCase = new AddProductUseCase(_productRepository, _subscriptionService);
         _searchProductsUseCase = new SearchProductsUseCase(_productRepository);
         _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
         _getDailyCashSummaryUseCase = new GetDailyCashSummaryUseCase(_productRepository);
         _getGrossProfitSummaryUseCase = new GetGrossProfitSummaryUseCase(_productRepository);
+        _reportsUseCase = new ReportsUseCase(new SqliteReportReader(_dbContext));
         _getReorderSuggestionsUseCase = new GetReorderSuggestionsUseCase(_productRepository);
+        _listInventoryUseCase = new ListInventoryUseCase(_productRepository);
         _saveOpeningCashUseCase = new SaveOpeningCashUseCase(_productRepository);
         _closeCashDayUseCase = new CloseCashDayUseCase(_productRepository);
         _getCashMovementsUseCase = new GetCashMovementsUseCase(_productRepository);
@@ -94,6 +134,9 @@ public partial class Form1 : Form
         _deactivateProductUseCase = new DeactivateProductUseCase(_productRepository);
         _appSettings = new SqliteAppSettingsStore(_dbContext);
         _cloudBackup = new CloudBackupService(_dbContext, new UnconfiguredCloudBackupStore());
+        _localBackup = new LocalBackupService(_dbContext, _appSettings);
+        _backupTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
+        _backupTimer.Tick += (_, _) => RunScheduledBackup();
         _printSaleTicketUseCase = new PrintSaleTicketUseCase();
 
         // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
@@ -149,6 +192,7 @@ public partial class Form1 : Form
         SetupSearchContextMenu();
         CalculateTotal();
         RefreshStockAlerts();
+        ApplyAccess();
         ApplySerialScanner(notifyOnError: false);
         txtBuscador.Focus();
     }
@@ -162,34 +206,45 @@ public partial class Form1 : Form
         };
 
         var mArchivo = new ToolStripMenuItem("&Archivo");
-        var mVentas = new ToolStripMenuItem("Ver &Ventas...", null, (_, _) => OpenSales());
-        var mUtilidad = new ToolStripMenuItem("&Utilidad bruta / ganancia neta...", null, (_, _) => OpenGrossProfitReport());
-        var mSugerido = new ToolStripMenuItem("&Sugerido de compra...", null, (_, _) => OpenPurchaseSuggestion());
-        var mCorteX = new ToolStripMenuItem("Corte &X (estado de caja)...", null, (_, _) => OpenCashClose(CashCutMode.X));
-        var mCorteZ = new ToolStripMenuItem("Corte &Z (cierre)...", null, (_, _) => OpenCashClose(CashCutMode.Z));
-        var mMovimientos = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
-        var mImportar = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
-        var mNegocio = new ToolStripMenuItem("&Datos del negocio...", null, (_, _) => OpenBusinessProfile());
-        var mPerifericos = new ToolStripMenuItem("&Periféricos e impresión...", null, (_, _) => OpenPeripherals());
+        mnuSales = new ToolStripMenuItem("Ver &Ventas...", null, (_, _) => OpenSales());
+        mnuProfit = new ToolStripMenuItem("&Utilidad bruta / ganancia neta...", null, (_, _) => OpenGrossProfitReport());
+        mnuReports = new ToolStripMenuItem("&Reportes", null, (_, _) => OpenReports());
+        mnuSuggestion = new ToolStripMenuItem("&Sugerido de compra...", null, (_, _) => OpenPurchaseSuggestion());
+        mnuCashX = new ToolStripMenuItem("Corte &X (estado de caja)...", null, (_, _) => OpenCashClose(CashCutMode.X));
+        mnuCashZ = new ToolStripMenuItem("Corte &Z (cierre)...", null, (_, _) => OpenCashClose(CashCutMode.Z));
+        mnuCashMovements = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
+        mnuImport = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
+        mnuBusiness = new ToolStripMenuItem("&Datos del negocio...", null, (_, _) => OpenBusinessProfile());
+        mnuPeripherals = new ToolStripMenuItem("&Periféricos e impresión...", null, (_, _) => OpenPeripherals());
+        mnuUsers = new ToolStripMenuItem("&Usuarios...", null, (_, _) => OpenUsers());
+        var mLogout = new ToolStripMenuItem("Cerrar &sesión", null, (_, _) => Logout());
         var mSalir = new ToolStripMenuItem("&Salir", null, (_, _) => Close());
-        mArchivo.DropDownItems.AddRange([mVentas, mUtilidad, mSugerido, mCorteX, mCorteZ, mMovimientos, mImportar, mNegocio, mPerifericos, new ToolStripSeparator(), mSalir]);
+        mArchivo.DropDownItems.AddRange([
+            mnuSales, mnuProfit, mnuSuggestion, mnuCashX, mnuCashZ, mnuCashMovements, mnuImport,
+            mnuBusiness, mnuPeripherals, mnuUsers, new ToolStripSeparator(), mLogout, mSalir]);
 
-        var mProductos = new ToolStripMenuItem("&Productos");
-        mProductos.DropDownItems.Add(new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click));
-        mProductos.DropDownItems.Add(new ToolStripMenuItem("Sugerido de &compra...", null, (_, _) => OpenPurchaseSuggestion()));
-        mProductos.DropDownItems.Add(new ToolStripMenuItem("&Historial de movimientos (Kárdex)...", null, (_, _) => OpenKardex()));
-        mProductos.DropDownItems.Add(new ToolStripSeparator());
-        mProductos.DropDownItems.Add(new ToolStripMenuItem("&Ocultar todo el inventario...", null, (_, _) => HideAllInventory()));
+        mnuProducts = new ToolStripMenuItem("&Productos");
+        mnuRegisterProduct = new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click);
+        mnuSuggestionProducts = new ToolStripMenuItem("Sugerido de &compra...", null, (_, _) => OpenPurchaseSuggestion());
+        mnuInventory = new ToolStripMenuItem("&Inventario (F8)...", null, (_, _) => OpenInventory());
+        mnuKardex = new ToolStripMenuItem("&Historial de movimientos (Kárdex)...", null, (_, _) => OpenKardex());
+        mnuHideInventory = new ToolStripMenuItem("&Ocultar todo el inventario...", null, (_, _) => HideAllInventory());
+        mnuProducts.DropDownItems.Add(mnuRegisterProduct);
+        mnuProducts.DropDownItems.Add(mnuSuggestionProducts);
+        mnuProducts.DropDownItems.Add(mnuInventory);
+        mnuProducts.DropDownItems.Add(mnuKardex);
+        mnuProducts.DropDownItems.Add(new ToolStripSeparator());
+        mnuProducts.DropDownItems.Add(mnuHideInventory);
 
-        var mVenta = new ToolStripMenuItem("&Venta");
-        mVenta.DropDownItems.Add(new ToolStripMenuItem("&Cobrar (F5)", null, BtnCheckout_Click));
-        mVenta.DropDownItems.Add(new ToolStripMenuItem("&Vaciar carrito", null, BtnClearCart_Click));
-        mVenta.DropDownItems.Add(new ToolStripSeparator());
-        mVenta.DropDownItems.Add(new ToolStripMenuItem("&Siguiente carrito (F6)", null, (_, _) => CycleToNextCart()));
-        mVenta.DropDownItems.Add(new ToolStripMenuItem("&Nueva venta (F7)", null, (_, _) => CreateNewCartSession()));
-        mVenta.DropDownItems.Add(new ToolStripMenuItem("Cerrar venta actual", null, (_, _) => CloseActiveCartSession()));
+        mnuSale = new ToolStripMenuItem("&Venta");
+        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Cobrar (F5)", null, BtnCheckout_Click));
+        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Vaciar carrito", null, BtnClearCart_Click));
+        mnuSale.DropDownItems.Add(new ToolStripSeparator());
+        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Siguiente carrito (F6)", null, (_, _) => CycleToNextCart()));
+        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Nueva venta (F7)", null, (_, _) => CreateNewCartSession()));
+        mnuSale.DropDownItems.Add(new ToolStripMenuItem("Cerrar venta actual", null, (_, _) => CloseActiveCartSession()));
 
-        menu.Items.AddRange([mArchivo, mProductos, mVenta]);
+        menu.Items.AddRange([mArchivo, mnuProducts, mnuSale, mnuReports]);
         return menu;
     }
 
@@ -212,6 +267,9 @@ public partial class Form1 : Form
         btnGrossProfit = CreateToolItem("Utilidad", UiIcons.GrossProfit());
         btnGrossProfit.Click += (_, _) => OpenGrossProfitReport();
 
+        btnReports = CreateToolItem("Reportes", UiIcons.Sales());
+        btnReports.Click += (_, _) => OpenReports();
+
         btnPurchaseSuggestion = CreateToolItem("Sugerido", UiIcons.Reorder());
         btnPurchaseSuggestion.Click += (_, _) => OpenPurchaseSuggestion();
 
@@ -227,20 +285,26 @@ public partial class Form1 : Form
         btnKardex = CreateToolItem("Kárdex", UiIcons.Kardex());
         btnKardex.Click += (_, _) => OpenKardex();
 
+        btnInventory = CreateToolItem("Inventario", UiIcons.Kardex());
+        btnInventory.Click += (_, _) => OpenInventory();
+
         btnImportExcel = CreateToolItem("Importar CSV", UiIcons.Import());
         btnImportExcel.Click += BtnImportExcel_Click;
 
         btnOpenAddProduct = CreateToolItem("Registrar", UiIcons.AddProduct());
         btnOpenAddProduct.Click += BtnOpenAddProduct_Click;
 
-        var btnHideInventory = CreateToolItem("Ocultar inventario", UiIcons.Clear());
+        btnHideInventory = CreateToolItem("Ocultar inventario", UiIcons.Clear());
         btnHideInventory.Click += (_, _) => HideAllInventory();
 
-        var btnBusiness = CreateToolItem("Negocio", UiIcons.Business());
+        btnBusiness = CreateToolItem("Negocio", UiIcons.Business());
         btnBusiness.Click += (_, _) => OpenBusinessProfile();
 
-        var btnPeripherals = CreateToolItem("Periféricos", UiIcons.Printer());
+        btnPeripherals = CreateToolItem("Periféricos", UiIcons.Printer());
         btnPeripherals.Click += (_, _) => OpenPeripherals();
+
+        btnUsers = CreateToolItem("Usuarios", UiIcons.Sales());
+        btnUsers.Click += (_, _) => OpenUsers();
 
         lblBrand = new ToolStripLabel
         {
@@ -285,17 +349,20 @@ public partial class Form1 : Form
 
         strip.Items.AddRange([
             btnViewSales,
+            btnReports,
             btnGrossProfit,
             btnPurchaseSuggestion,
             btnCashCloseX,
             btnCashCloseZ,
             btnCashMovements,
             btnKardex,
+            btnInventory,
             btnImportExcel,
             btnOpenAddProduct,
             btnHideInventory,
             btnBusiness,
             btnPeripherals,
+            btnUsers,
             new ToolStripSeparator(),
             lblBrand,
             lblBrandName,
@@ -397,6 +464,7 @@ public partial class Form1 : Form
         var gbResults = UiHelp.CreateGroupBox("Resultados del catálogo", SectionHelpText.CatalogResults, new Padding(0, 0, 6, 0));
 
         dgvSearch = CreateGrid();
+        ProductImages.AddPhotoColumn(dgvSearch);
         dgvSearch.Columns.Add("Barcode", "Código");
         dgvSearch.Columns.Add("Name", "Descripción");
         dgvSearch.Columns.Add("Price", "Precio");
@@ -503,6 +571,7 @@ public partial class Form1 : Form
         tabsCarts.ContextMenuStrip = tabsMenu;
 
         dgvCart = CreateGrid();
+        ProductImages.AddPhotoColumn(dgvCart);
         dgvCart.Columns.Add("Barcode", "Código");
         dgvCart.Columns.Add("Name", "Producto");
         dgvCart.Columns.Add("Price", "Precio");
@@ -622,7 +691,14 @@ public partial class Form1 : Form
         };
         lblLicense.Click += (_, _) => OpenLicense();
 
+        lblSignedIn = new ToolStripStatusLabel(_currentUser.DisplayName)
+        {
+            BorderSides = ToolStripStatusLabelBorderSides.Left,
+            BorderStyle = Border3DStyle.Etched
+        };
+
         status.Items.Add(lblStatus);
+        status.Items.Add(lblSignedIn);
         status.Items.Add(lblLicense);
         status.Items.Add(lblStockAlerts);
         status.Items.Add(connected);
@@ -736,26 +812,50 @@ public partial class Form1 : Form
 
     private void OpenSales()
     {
-        using var f = new SalesHistoryForm(_productRepository, _appSettings);
+        if (!Allow(UserPermission.ViewSales))
+            return;
+
+        using var f = new SalesHistoryForm(
+            _productRepository,
+            _appSettings,
+            new ProcessSaleReturnUseCase(_productRepository));
         f.ShowDialog();
     }
 
     private void OpenPurchaseSuggestion()
     {
+        if (!Allow(UserPermission.Reports))
+            return;
+
         using var f = new PurchaseSuggestionForm(_getReorderSuggestionsUseCase);
         f.ShowDialog(this);
         RefreshStockAlerts();
         RefreshSearchIfActive();
     }
 
+    private void OpenReports()
+    {
+        if (!Allow(UserPermission.Reports))
+            return;
+
+        using var form = new ReportsForm(_reportsUseCase, _appSettings);
+        form.ShowDialog(this);
+    }
+
     private void OpenGrossProfitReport()
     {
+        if (!Allow(UserPermission.Reports))
+            return;
+
         using var f = new GrossProfitReportForm(_getGrossProfitSummaryUseCase);
         f.ShowDialog();
     }
 
     private void OpenCashClose(CashCutMode mode)
     {
+        if (!Allow(UserPermission.Cash))
+            return;
+
         using var f = new CashCloseForm(
             _getDailyCashSummaryUseCase,
             _saveOpeningCashUseCase,
@@ -768,6 +868,9 @@ public partial class Form1 : Form
 
     private void OpenCashMovements()
     {
+        if (!Allow(UserPermission.Cash))
+            return;
+
         using var f = new CashMovementsForm(
             _getCashMovementsUseCase,
             _registerCashMovementUseCase,
@@ -775,8 +878,31 @@ public partial class Form1 : Form
         f.ShowDialog();
     }
 
+    private void OpenInventory()
+    {
+        if (!Allow(UserPermission.Products))
+            return;
+
+        using var f = new InventoryForm(
+            _listInventoryUseCase,
+            _productRepository,
+            _updateProductUseCase,
+            _adjustStockUseCase,
+            _deactivateProductUseCase,
+            _getStockMovementsUseCase);
+        f.ShowDialog(this);
+        if (!f.CatalogChanged)
+            return;
+
+        TxtBuscador_TextChanged(this, EventArgs.Empty);
+        RefreshStockAlerts();
+    }
+
     private void OpenKardex(Product? product = null)
     {
+        if (!Allow(UserPermission.Products))
+            return;
+
         using var f = new KardexForm(_getStockMovementsUseCase, _productRepository, product);
         f.ShowDialog(this);
     }
@@ -787,10 +913,26 @@ public partial class Form1 : Form
             return;
 
         _openingCashPromptShown = true;
-        OfferSeedCatalogIfNeeded();
-        PromptOpeningCashIfNeeded();
+        if (_currentUser.Has(UserPermission.Products))
+            OfferSeedCatalogIfNeeded();
+        if (_currentUser.Has(UserPermission.Sell) || _currentUser.Has(UserPermission.Cash))
+            PromptOpeningCashIfNeeded();
+        _backupTimer.Start();
+        RunScheduledBackup();
         _ = _cloudBackup.TryUploadPendingAsync();
         _ = TryRenewLicenseAsync();
+    }
+
+    private void RunScheduledBackup()
+    {
+        try
+        {
+            _localBackup.BackupIfDue();
+        }
+        catch (Exception)
+        {
+            // Un fallo del temporizador no debe interrumpir la venta.
+        }
     }
 
     private async Task TryRenewLicenseAsync()
@@ -887,15 +1029,19 @@ public partial class Form1 : Form
 
         var menuEdit = new ToolStripMenuItem { Text = "Editar Datos del Producto" };
         menuEdit.Click += MenuEdit_Click;
+        mnuEditProduct = menuEdit;
 
         var menuAudit = new ToolStripMenuItem { Text = "Auditar / Ajustar Stock" };
         menuAudit.Click += MenuAudit_Click;
+        mnuAuditProduct = menuAudit;
 
         var menuKardex = new ToolStripMenuItem { Text = "Ver Kárdex" };
         menuKardex.Click += MenuKardex_Click;
+        mnuKardexProduct = menuKardex;
 
         var menuHide = new ToolStripMenuItem { Text = "Quitar del mostrador" };
         menuHide.Click += MenuHide_Click;
+        mnuHideProduct = menuHide;
 
         cmsSearchMenu.Items.Add(menuEdit);
         cmsSearchMenu.Items.Add(menuAudit);
@@ -910,12 +1056,102 @@ public partial class Form1 : Form
             {
                 dgvSearch.ClearSelection();
                 dgvSearch.Rows[e.RowIndex].Selected = true;
-                dgvSearch.CurrentCell = dgvSearch.Rows[e.RowIndex].Cells[0];
+                dgvSearch.CurrentCell = dgvSearch.Rows[e.RowIndex].Cells["Barcode"];
             }
         };
     }
 
     private void SetStatus(string message) => lblStatus.Text = message;
+
+    private bool Allow(UserPermission permission, bool quiet = false)
+    {
+        if (_currentUser.Has(permission))
+            return true;
+
+        if (quiet)
+            SetStatus("No tienes permiso para esta acción.");
+        else
+        {
+            MessageBox.Show(
+                "No tienes permiso para esta acción.",
+                "Permiso",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+
+        return false;
+    }
+
+    private void ApplyAccess()
+    {
+        bool sell = _currentUser.Has(UserPermission.Sell);
+        bool sales = _currentUser.Has(UserPermission.ViewSales);
+        bool products = _currentUser.Has(UserPermission.Products);
+        bool import = _currentUser.Has(UserPermission.ImportProducts);
+        bool cash = _currentUser.Has(UserPermission.Cash);
+        bool reports = _currentUser.Has(UserPermission.Reports);
+        bool settings = _currentUser.Has(UserPermission.Settings);
+        bool users = _currentUser.Has(UserPermission.ManageUsers);
+
+        mnuSales.Visible = sales;
+        btnViewSales.Visible = sales;
+        mnuProfit.Visible = reports;
+        btnGrossProfit.Visible = reports;
+        mnuReports.Visible = reports;
+        btnReports.Visible = reports;
+        mnuSuggestion.Visible = reports;
+        mnuSuggestionProducts.Visible = reports;
+        btnPurchaseSuggestion.Visible = reports;
+        mnuCashX.Visible = cash;
+        btnCashCloseX.Visible = cash;
+        mnuCashZ.Visible = cash;
+        btnCashCloseZ.Visible = cash;
+        mnuCashMovements.Visible = cash;
+        btnCashMovements.Visible = cash;
+        mnuImport.Visible = import;
+        btnImportExcel.Visible = import;
+        mnuBusiness.Visible = settings;
+        btnBusiness.Visible = settings;
+        mnuPeripherals.Visible = settings;
+        btnPeripherals.Visible = settings;
+        mnuUsers.Visible = users;
+        btnUsers.Visible = users;
+        mnuRegisterProduct.Visible = products;
+        btnOpenAddProduct.Visible = products;
+        mnuInventory.Visible = products;
+        btnInventory.Visible = products;
+        mnuKardex.Visible = products;
+        btnKardex.Visible = products;
+        mnuHideInventory.Visible = products;
+        btnHideInventory.Visible = products;
+        mnuProducts.Visible = products || reports;
+        mnuSale.Visible = sell;
+        btnCheckout.Visible = sell;
+        btnPlus.Visible = sell;
+        btnMinus.Visible = sell;
+        btnClearCart.Visible = sell;
+        btnNewCart.Visible = sell;
+        btnCloseCart.Visible = sell;
+        mnuEditProduct.Enabled = products;
+        mnuAuditProduct.Enabled = products;
+        mnuKardexProduct.Enabled = products;
+        mnuHideProduct.Enabled = products;
+    }
+
+    private void OpenUsers()
+    {
+        if (!Allow(UserPermission.ManageUsers))
+            return;
+
+        using var form = new UsersForm(new SqliteUserRepository(_dbContext), _appSettings);
+        form.ShowDialog(this);
+    }
+
+    private void Logout()
+    {
+        SessionEnded = true;
+        Close();
+    }
 
     private void RefreshStockAlerts()
     {
@@ -966,14 +1202,19 @@ public partial class Form1 : Form
         if (TryKeepLatestScan(term))
             return;
 
-        dgvSearch.Rows.Clear();
+        ProductImages.ClearRows(dgvSearch);
 
         if (term.Length > 0)
         {
             List<Product> matches = _searchProductsUseCase.Execute(term);
             foreach (var p in matches)
             {
-                int idx = dgvSearch.Rows.Add(p.Barcode, p.Name, p.RetailPrice, p.Unit.FormatQuantity(p.Stock));
+                int idx = dgvSearch.Rows.Add(
+                    ProductImages.ForGrid(p.Image),
+                    p.Barcode,
+                    p.Name,
+                    p.RetailPrice,
+                    p.Unit.FormatQuantity(p.Stock));
                 var row = dgvSearch.Rows[idx];
                 row.Tag = p;
                 ApplyStockAlertRowStyle(row, p);
@@ -1015,6 +1256,13 @@ public partial class Form1 : Form
     private void ApplyScannedCode(string raw)
     {
         string code = raw.Trim();
+        if (User.LooksLikeEmployeeBarcode(code))
+        {
+            SetStatus("Ese código es una credencial de empleado.");
+            PrepareNextScan();
+            return;
+        }
+
         _lastScanCode = code.Length > 0 ? code : null;
 
         if (code.Length > 0 && !string.Equals(txtBuscador.Text.Trim(), code, StringComparison.Ordinal))
@@ -1046,10 +1294,11 @@ public partial class Form1 : Form
 
     private void AddToCart(DataGridViewRow row)
     {
+        if (!Allow(UserPermission.Sell, quiet: true))
+            return;
+
         string barcode = CellText(row, "Barcode");
         string name = CellText(row, "Name");
-        decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
-
         var product = _productRepository.GetByBarcode(barcode);
         if (product == null)
         {
@@ -1060,7 +1309,11 @@ public partial class Form1 : Form
         decimal qtyToAdd = 1m;
         if (product.Unit.AllowsDecimals())
         {
-            using var qtyForm = new BulkQuantityForm(product.Name, product.Unit, product.Stock);
+            PeripheralSettings devices = _appSettings.GetPeripheralSettings();
+            bool useScale = product.Unit == UnitOfMeasure.Kilogramo && devices.HasScaleConfigured;
+            using var qtyForm = useScale
+                ? new BulkQuantityForm(product.Name, product.Unit, product.Stock, devices.ScaleSerialPort, devices.ScaleBaudRate)
+                : new BulkQuantityForm(product.Name, product.Unit, product.Stock);
             if (qtyForm.ShowDialog(this) != DialogResult.OK)
                 return;
             qtyToAdd = qtyForm.Quantity;
@@ -1068,25 +1321,57 @@ public partial class Form1 : Form
 
         foreach (DataGridViewRow cartRow in dgvCart.Rows)
         {
-            if (CellText(cartRow, 0) == barcode)
+            if (CellText(cartRow, "Barcode") == barcode)
             {
                 decimal currentQty = Convert.ToDecimal(cartRow.Cells["Qty"].Value);
                 decimal newQty = currentQty + qtyToAdd;
-                cartRow.Cells["Qty"].Value = FormatCartQty(newQty, product.Unit);
-                cartRow.Cells["Subtotal"].Value = newQty * price;
+                ApplyCartLinePricing(cartRow, product, newQty);
                 CalculateTotal();
                 SetStatus($"Actualizado en carrito: {name} ({product.Unit.FormatQuantity(newQty)})");
                 return;
             }
         }
 
-        dgvCart.Rows.Add(barcode, name, price, FormatCartQty(qtyToAdd, product.Unit), qtyToAdd * price);
+        int added = dgvCart.Rows.Add(
+            ProductImages.ForGrid(product.Image),
+            barcode,
+            name,
+            0m,
+            FormatCartQty(qtyToAdd, product.Unit),
+            0m);
+        ApplyCartLinePricing(dgvCart.Rows[added], product, qtyToAdd);
         CalculateTotal();
         SetStatus($"Añadido al carrito: {name} ({product.Unit.FormatQuantity(qtyToAdd)})");
     }
 
     private static string FormatCartQty(decimal qty, UnitOfMeasure unit) =>
         unit.AllowsDecimals() ? qty.ToString("0.###") : ((int)qty).ToString();
+
+    private static void ApplyCartLinePricing(DataGridViewRow row, Product product, decimal qty)
+    {
+        decimal price = product.ResolveUnitPrice(qty, DateOnly.FromDateTime(DateTime.Now));
+        row.Cells["Price"].Value = price;
+        row.Cells["Qty"].Value = FormatCartQty(qty, product.Unit);
+        row.Cells["Subtotal"].Value = decimal.Round(qty * price, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private void RefreshActiveCartPrices()
+    {
+        foreach (DataGridViewRow row in dgvCart.Rows)
+        {
+            if (row.IsNewRow)
+                continue;
+
+            var product = _productRepository.GetByBarcode(CellText(row, "Barcode"));
+            if (product == null)
+                continue;
+
+            decimal qty = Convert.ToDecimal(row.Cells["Qty"].Value);
+            ApplyCartLinePricing(row, product, qty);
+        }
+
+        CalculateTotal();
+    }
 
     private CartSession ActiveSession => _cartSessions[_activeSessionIndex];
 
@@ -1142,12 +1427,13 @@ public partial class Form1 : Form
 
     private void LoadCartIntoGrid(CartSession session)
     {
-        dgvCart.Rows.Clear();
+        ProductImages.ClearRows(dgvCart);
         foreach (var line in session.Lines)
         {
             var product = _productRepository.GetByBarcode(line.Barcode);
             UnitOfMeasure unit = product?.Unit ?? UnitOfMeasure.Pieza;
             dgvCart.Rows.Add(
+                ProductImages.ForGrid(product?.Image),
                 line.Barcode,
                 line.Name,
                 line.Price,
@@ -1189,6 +1475,9 @@ public partial class Form1 : Form
 
     private void CreateNewCartSession()
     {
+        if (!Allow(UserPermission.Sell, quiet: true))
+            return;
+
         if (_cartSessions.Count >= CartSession.MaxCartSessions)
         {
             MessageBox.Show(
@@ -1217,6 +1506,9 @@ public partial class Form1 : Form
 
     private void CycleToNextCart()
     {
+        if (!Allow(UserPermission.Sell, quiet: true))
+            return;
+
         if (_cartSessions.Count <= 1)
         {
             SetStatus("Solo hay una venta activa");
@@ -1229,6 +1521,9 @@ public partial class Form1 : Form
 
     private void CloseActiveCartSession()
     {
+        if (!Allow(UserPermission.Sell, quiet: true))
+            return;
+
         if (_cartSessions.Count <= 1)
         {
             MessageBox.Show(
@@ -1270,7 +1565,7 @@ public partial class Form1 : Form
 
     private void ClearActiveCartSession()
     {
-        dgvCart.Rows.Clear();
+        ProductImages.ClearRows(dgvCart);
         if (_cartSessions.Count > 0)
             ActiveSession.Lines.Clear();
         CalculateTotal();
@@ -1292,6 +1587,9 @@ public partial class Form1 : Form
 
     private void BtnCheckout_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Sell))
+            return;
+
         try
         {
             if (dgvCart.Rows.Count == 0)
@@ -1299,6 +1597,8 @@ public partial class Form1 : Form
                 MessageBox.Show("El carrito está vacío.", "Atención", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            RefreshActiveCartPrices();
 
             // ABRIR VENTANA DE COBRO INTERMEDIA: Pasamos el total actual calculando del carrito
             using var checkoutForm = new CheckoutForm(_saleTotal);
@@ -1318,12 +1618,18 @@ public partial class Form1 : Form
             {
                 items.Add(new SaleItemDto
                 {
-                    Barcode = CellText(row, 0),
+                    Barcode = CellText(row, "Barcode"),
                     Quantity = Convert.ToDecimal(row.Cells["Qty"].Value)
                 });
             }
 
-            Sale sale = _processSaleUseCase.Execute(items, method, reference, amountReceived, cardAmount);
+            Sale sale = _processSaleUseCase.Execute(
+                items,
+                method,
+                reference,
+                amountReceived,
+                cardAmount,
+                checkoutForm.DiscountAmount);
             PrintSaleTicket(sale);
 
             if (method == "EFECTIVO" || method == "MIXTO")
@@ -1334,7 +1640,7 @@ public partial class Form1 : Form
             // Limpiar solo la sesión/tab activa; las demás ventas en espera se conservan
             ClearActiveCartSession();
             txtBuscador.Clear();
-            dgvSearch.Rows.Clear();
+            ProductImages.ClearRows(dgvSearch);
             RefreshStockAlerts();
             txtBuscador.Focus();
         }
@@ -1346,6 +1652,9 @@ public partial class Form1 : Form
 
     private void BtnOpenAddProduct_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Products))
+            return;
+
         using var addProductForm = new AddProductForm(_addProductUseCase);
         if (addProductForm.ShowDialog() == DialogResult.OK)
         {
@@ -1389,7 +1698,10 @@ public partial class Form1 : Form
 
     private void OpenBusinessProfile()
     {
-        using var form = new BusinessProfileForm(_appSettings, _subscriptionService);
+        if (!Allow(UserPermission.Settings))
+            return;
+
+        using var form = new BusinessProfileForm(_appSettings, _subscriptionService, _localBackup);
         form.ShowDialog(this);
         RefreshBrand();
     }
@@ -1444,6 +1756,9 @@ public partial class Form1 : Form
 
     private void OpenPeripherals()
     {
+        if (!Allow(UserPermission.Settings))
+            return;
+
         StopSerialScanner();
         using var form = new PeripheralsForm(_appSettings);
         form.ShowDialog(this);
@@ -1509,13 +1824,10 @@ public partial class Form1 : Form
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
     {
         StopSerialScanner();
+        _backupTimer.Stop();
         try
         {
-            string backupFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                "Posly_Backups");
-            string fileName = $"posly_{DateTime.Now:yyyyMMdd_HHmmss}.db";
-            _dbContext.BackupTo(Path.Combine(backupFolder, fileName));
+            _localBackup.BackupOnClose();
         }
         catch (Exception ex)
         {
@@ -1552,6 +1864,13 @@ public partial class Form1 : Form
             return;
         }
 
+        if (e.KeyCode == Keys.F8)
+        {
+            OpenInventory();
+            e.Handled = true;
+            return;
+        }
+
         if (e.KeyCode == Keys.Escape)
         {
             var confirmExit = MessageBox.Show(
@@ -1571,6 +1890,9 @@ public partial class Form1 : Form
     }
     private void BtnPlus_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Sell, quiet: true))
+            return;
+
         if (dgvCart.CurrentRow == null) return;
 
         var row = dgvCart.CurrentRow;
@@ -1579,17 +1901,26 @@ public partial class Form1 : Form
         UnitOfMeasure unit = product?.Unit ?? UnitOfMeasure.Pieza;
         decimal step = unit.AllowsDecimals() ? 0.1m : 1m;
 
-        decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
         decimal currentQty = Convert.ToDecimal(row.Cells["Qty"].Value);
         decimal newQty = currentQty + step;
 
-        row.Cells["Qty"].Value = FormatCartQty(newQty, unit);
-        row.Cells["Subtotal"].Value = newQty * price;
+        if (product != null)
+            ApplyCartLinePricing(row, product, newQty);
+        else
+        {
+            decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
+            row.Cells["Qty"].Value = FormatCartQty(newQty, unit);
+            row.Cells["Subtotal"].Value = newQty * price;
+        }
+
         CalculateTotal();
     }
 
     private void BtnMinus_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Sell, quiet: true))
+            return;
+
         if (dgvCart.CurrentRow == null) return;
 
         var row = dgvCart.CurrentRow;
@@ -1598,7 +1929,6 @@ public partial class Form1 : Form
         UnitOfMeasure unit = product?.Unit ?? UnitOfMeasure.Pieza;
         decimal step = unit.AllowsDecimals() ? 0.1m : 1m;
 
-        decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
         decimal currentQty = Convert.ToDecimal(row.Cells["Qty"].Value);
         decimal newQty = currentQty - step;
 
@@ -1606,8 +1936,13 @@ public partial class Form1 : Form
         {
             dgvCart.Rows.Remove(row);
         }
+        else if (product != null)
+        {
+            ApplyCartLinePricing(row, product, newQty);
+        }
         else
         {
+            decimal price = Convert.ToDecimal(row.Cells["Price"].Value);
             row.Cells["Qty"].Value = FormatCartQty(newQty, unit);
             row.Cells["Subtotal"].Value = newQty * price;
         }
@@ -1617,6 +1952,9 @@ public partial class Form1 : Form
 
     private void BtnClearCart_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Sell))
+            return;
+
         if (dgvCart.Rows.Count > 0)
         {
             string label = _cartSessions.Count > 0 ? ActiveSession.Label : "el carrito";
@@ -1637,6 +1975,9 @@ public partial class Form1 : Form
 
     private void MenuEdit_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Products))
+            return;
+
         if (dgvSearch.CurrentRow != null)
         {
             string barcode = CellText(dgvSearch.CurrentRow, "Barcode");
@@ -1657,6 +1998,8 @@ public partial class Form1 : Form
 
     private void BtnImportExcel_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.ImportProducts))
+            return;
         using var openFileDialog = new OpenFileDialog { Filter = "Archivos CSV (*.csv)|*.csv", Title = "Seleccionar inventario en formato CSV" };
         if (openFileDialog.ShowDialog() == DialogResult.OK)
         {
@@ -1736,6 +2079,9 @@ public partial class Form1 : Form
 
     private void MenuAudit_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Products))
+            return;
+
         if (dgvSearch.CurrentRow != null)
         {
             string barcode = CellText(dgvSearch.CurrentRow, "Barcode");
@@ -1756,6 +2102,9 @@ public partial class Form1 : Form
 
     private void MenuHide_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Products))
+            return;
+
         if (dgvSearch.CurrentRow == null)
             return;
 
@@ -1787,6 +2136,9 @@ public partial class Form1 : Form
 
     private void HideAllInventory()
     {
+        if (!Allow(UserPermission.Products))
+            return;
+
         var confirm = MessageBox.Show(
             "¿Ocultar todo el inventario del mostrador?\n\nLos productos dejarán de aparecer en búsquedas y en el lector. Las ventas y el kárdex se conservan. Los carritos abiertos se vacían.",
             "Ocultar inventario",
@@ -1800,10 +2152,10 @@ public partial class Form1 : Form
             int hidden = _deactivateProductUseCase.ExecuteAll();
             foreach (CartSession session in _cartSessions)
                 session.Lines.Clear();
-            dgvCart.Rows.Clear();
+            ProductImages.ClearRows(dgvCart);
             CalculateTotal();
             txtBuscador.Clear();
-            dgvSearch.Rows.Clear();
+            ProductImages.ClearRows(dgvSearch);
             SetStatus(hidden == 0
                 ? "No había productos visibles en el mostrador"
                 : $"Inventario oculto: {hidden} productos");
@@ -1818,6 +2170,9 @@ public partial class Form1 : Form
 
     private void MenuKardex_Click(object? sender, EventArgs e)
     {
+        if (!Allow(UserPermission.Products))
+            return;
+
         if (dgvSearch.CurrentRow == null)
             return;
 

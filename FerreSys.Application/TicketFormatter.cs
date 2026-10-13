@@ -40,6 +40,12 @@ public static class TicketFormatter
         }
 
         buffer.AppendLine(new string('-', width));
+        if (sale.DiscountAmount > 0m)
+        {
+            buffer.AppendLine(FormatLine("SUBTOTAL:", $"${sale.Subtotal:N2}", width));
+            buffer.AppendLine(FormatLine("DESCUENTO:", $"${sale.DiscountAmount:N2}", width));
+        }
+
         buffer.AppendLine(FormatLine("TOTAL:", $"${sale.Total:N2}", width));
 
         if (sale.PaymentMethod == "EFECTIVO")

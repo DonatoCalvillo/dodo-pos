@@ -7,7 +7,10 @@ namespace FerreSys.Infrastructure.Persistence;
 public class SqliteProductRepository : IProductRepository
 {
     private const string ProductSelect =
-        "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, IsActive FROM Products";
+        "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, IsActive, ImageBlob, DiscountKind, DiscountValue, DiscountStartsOn, DiscountEndsOn, WholesalePrice, WholesaleMinQuantity FROM Products";
+
+    private const string SaleHeaderSelect =
+        "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount FROM Sales";
 
     private readonly SqliteDbContext _context;
 
@@ -22,8 +25,8 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         string query = @"
-            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
-            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
+            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, ImageBlob, DiscountKind, DiscountValue, DiscountStartsOn, DiscountEndsOn, WholesalePrice, WholesaleMinQuantity)
+            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock, @Image, @DiscountKind, @DiscountValue, @DiscountStartsOn, @DiscountEndsOn, @WholesalePrice, @WholesaleMinQuantity);";
 
         using var command = new SqliteCommand(query, connection);
         BindProductParameters(command, product);
@@ -46,6 +49,22 @@ public class SqliteProductRepository : IProductRepository
         return null;
     }
 
+    public Product? GetById(Guid productId)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = ProductSelect + " WHERE Id = @Id LIMIT 1;";
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@Id", productId.ToString());
+
+        using var reader = command.ExecuteReader();
+        if (reader.Read())
+            return MapProduct(reader);
+
+        return null;
+    }
+
     public List<Product> SearchByName(string term)
     {
         var products = new List<Product>();
@@ -56,6 +75,22 @@ public class SqliteProductRepository : IProductRepository
         string query = ProductSelect + " WHERE Name LIKE @Term AND IsActive = 1;";
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@Term", $"%{term}%");
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            products.Add(MapProduct(reader));
+
+        return products;
+    }
+
+    public List<Product> ListActive()
+    {
+        var products = new List<Product>();
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = ProductSelect + " WHERE IsActive = 1 ORDER BY Name;";
+        using var command = new SqliteCommand(query, connection);
 
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -83,7 +118,10 @@ public class SqliteProductRepository : IProductRepository
         string query = @"
             UPDATE Products 
             SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock,
-                Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock
+                Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock, ImageBlob = @Image,
+                DiscountKind = @DiscountKind, DiscountValue = @DiscountValue,
+                DiscountStartsOn = @DiscountStartsOn, DiscountEndsOn = @DiscountEndsOn,
+                WholesalePrice = @WholesalePrice, WholesaleMinQuantity = @WholesaleMinQuantity
             WHERE Id = @Id;";
 
         using var command = new SqliteCommand(query, connection);
@@ -123,7 +161,7 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             // Insertar en cabecera de Ventas
-            string saleQuery = "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount) VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount);";
+            string saleQuery = "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount) VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount, @DiscountAmount);";
             using (var cmdSale = new SqliteCommand(saleQuery, connection, transaction))
             {
                 cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
@@ -133,6 +171,7 @@ public class SqliteProductRepository : IProductRepository
                 cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
                 cmdSale.Parameters.AddWithValue("@AmountReceived", sale.AmountReceived);
                 cmdSale.Parameters.AddWithValue("@CardAmount", sale.CardAmount);
+                cmdSale.Parameters.AddWithValue("@DiscountAmount", sale.DiscountAmount);
                 cmdSale.ExecuteNonQuery();
             }
             // Insertar los detalles
@@ -178,7 +217,10 @@ public class SqliteProductRepository : IProductRepository
             string updateQuery = @"
                 UPDATE Products
                 SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock,
-                    Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock
+                    Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock, ImageBlob = @Image,
+                    DiscountKind = @DiscountKind, DiscountValue = @DiscountValue,
+                    DiscountStartsOn = @DiscountStartsOn, DiscountEndsOn = @DiscountEndsOn,
+                    WholesalePrice = @WholesalePrice, WholesaleMinQuantity = @WholesaleMinQuantity
                 WHERE Id = @Id;";
 
             foreach (var product in products)
@@ -189,8 +231,8 @@ public class SqliteProductRepository : IProductRepository
             }
 
             string saleQuery =
-                "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount) " +
-                "VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount);";
+                "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount) " +
+                "VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount, @DiscountAmount);";
             using (var cmdSale = new SqliteCommand(saleQuery, connection, transaction))
             {
                 cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
@@ -200,6 +242,7 @@ public class SqliteProductRepository : IProductRepository
                 cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
                 cmdSale.Parameters.AddWithValue("@AmountReceived", sale.AmountReceived);
                 cmdSale.Parameters.AddWithValue("@CardAmount", sale.CardAmount);
+                cmdSale.Parameters.AddWithValue("@DiscountAmount", sale.DiscountAmount);
                 cmdSale.ExecuteNonQuery();
             }
 
@@ -268,8 +311,8 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             string query = @"
-                INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
-                VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
+                INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, ImageBlob, DiscountKind, DiscountValue, DiscountStartsOn, DiscountEndsOn, WholesalePrice, WholesaleMinQuantity)
+                VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock, @Image, @DiscountKind, @DiscountValue, @DiscountStartsOn, @DiscountEndsOn, @WholesalePrice, @WholesaleMinQuantity);";
 
             foreach (var product in products)
             {
@@ -299,7 +342,10 @@ public class SqliteProductRepository : IProductRepository
             string query = @"
                 UPDATE Products
                 SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock,
-                    Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock
+                    Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock, ImageBlob = @Image,
+                    DiscountKind = @DiscountKind, DiscountValue = @DiscountValue,
+                    DiscountStartsOn = @DiscountStartsOn, DiscountEndsOn = @DiscountEndsOn,
+                    WholesalePrice = @WholesalePrice, WholesaleMinQuantity = @WholesaleMinQuantity
                 WHERE Id = @Id;";
 
             using (var command = new SqliteCommand(query, connection, transaction))
@@ -329,8 +375,8 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             string query = @"
-                INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
-                VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
+                INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, ImageBlob, DiscountKind, DiscountValue, DiscountStartsOn, DiscountEndsOn, WholesalePrice, WholesaleMinQuantity)
+                VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock, @Image, @DiscountKind, @DiscountValue, @DiscountStartsOn, @DiscountEndsOn, @WholesalePrice, @WholesaleMinQuantity);";
 
             using (var command = new SqliteCommand(query, connection, transaction))
             {
@@ -420,7 +466,7 @@ public class SqliteProductRepository : IProductRepository
         using var connection = _context.CreateConnection();
         connection.Open();
 
-        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount FROM Sales ORDER BY CreatedAt DESC;";
+        string query = SaleHeaderSelect + " ORDER BY CreatedAt DESC;";
         using var command = new SqliteCommand(query, connection);
         using var reader = command.ExecuteReader();
 
@@ -440,7 +486,7 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         // Filtro base: por defecto trae todo
-        string query = "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount FROM Sales";
+        string query = SaleHeaderSelect;
 
         if (filterType == "TODAY")
         {
@@ -505,8 +551,8 @@ public class SqliteProductRepository : IProductRepository
         try
         {
             string query = @"
-            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock)
-            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock);";
+            INSERT INTO Products (Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, ImageBlob, DiscountKind, DiscountValue, DiscountStartsOn, DiscountEndsOn, WholesalePrice, WholesaleMinQuantity)
+            VALUES (@Id, @Barcode, @Name, @CostPrice, @RetailPrice, @Stock, @Unit, @MinStock, @DesiredStock, @Image, @DiscountKind, @DiscountValue, @DiscountStartsOn, @DiscountEndsOn, @WholesalePrice, @WholesaleMinQuantity);";
 
             foreach (var product in products)
             {
@@ -534,7 +580,7 @@ public class SqliteProductRepository : IProductRepository
 
         // Filtramos usando la función date() de SQLite para comparar rangos de forma limpia (YYYY-MM-DD)
         string query = @"
-        SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount
+        SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount
         FROM Sales 
         WHERE date(CreatedAt) >= date(@StartDate) 
           AND date(CreatedAt) <= date(@EndDate)";
@@ -699,6 +745,139 @@ public class SqliteProductRepository : IProductRepository
             lastSaleAt);
     }
 
+    public Sale? FindSale(Guid saleId)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        string query = SaleHeaderSelect + " WHERE Id = @Id;";
+        using var command = new SqliteCommand(query, connection);
+        command.Parameters.AddWithValue("@Id", saleId.ToString());
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        return MapSaleHeader(reader);
+    }
+
+    public SaleReturnTotals GetSaleReturnTotals(Guid saleId)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+
+        decimal amount;
+        using (var amountCommand = new SqliteCommand(
+            "SELECT COALESCE(SUM(Amount), 0) FROM SaleReturns WHERE SaleId = @SaleId;",
+            connection))
+        {
+            amountCommand.Parameters.AddWithValue("@SaleId", saleId.ToString());
+            using var amountReader = amountCommand.ExecuteReader();
+            amountReader.Read();
+            amount = ReadMoney(amountReader, 0);
+        }
+
+        var quantities = new Dictionary<Guid, decimal>();
+        using (var quantityCommand = new SqliteCommand(@"
+            SELECT l.ProductId, COALESCE(SUM(l.Quantity), 0)
+            FROM SaleReturnLines l
+            INNER JOIN SaleReturns r ON r.Id = l.ReturnId
+            WHERE r.SaleId = @SaleId
+            GROUP BY l.ProductId;", connection))
+        {
+            quantityCommand.Parameters.AddWithValue("@SaleId", saleId.ToString());
+            using var reader = quantityCommand.ExecuteReader();
+            while (reader.Read())
+                quantities[Guid.Parse(reader.GetString(0))] = Convert.ToDecimal(reader.GetValue(1));
+        }
+
+        return new SaleReturnTotals(amount, quantities);
+    }
+
+    public void SaveSaleReturn(
+        SaleReturn saleReturn,
+        CashMovement cashMovement,
+        IReadOnlyList<Product> products,
+        IReadOnlyList<StockMovement> movements)
+    {
+        using var connection = _context.CreateConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            string updateQuery = @"
+                UPDATE Products
+                SET Name = @Name, CostPrice = @CostPrice, RetailPrice = @RetailPrice, Stock = @Stock,
+                    Unit = @Unit, MinStock = @MinStock, DesiredStock = @DesiredStock, ImageBlob = @Image,
+                    DiscountKind = @DiscountKind, DiscountValue = @DiscountValue,
+                    DiscountStartsOn = @DiscountStartsOn, DiscountEndsOn = @DiscountEndsOn,
+                    WholesalePrice = @WholesalePrice, WholesaleMinQuantity = @WholesaleMinQuantity
+                WHERE Id = @Id;";
+
+            foreach (var product in products)
+            {
+                using var cmdUpdate = new SqliteCommand(updateQuery, connection, transaction);
+                BindProductParameters(cmdUpdate, product);
+                if (cmdUpdate.ExecuteNonQuery() != 1)
+                    throw new InvalidOperationException($"No se pudo actualizar el stock de '{product.Name}'.");
+            }
+
+            using (var cmdReturn = new SqliteCommand(@"
+                INSERT INTO SaleReturns (Id, SaleId, CreatedAt, Amount, RestoreStock, Notes)
+                VALUES (@Id, @SaleId, @CreatedAt, @Amount, @RestoreStock, @Notes);", connection, transaction))
+            {
+                cmdReturn.Parameters.AddWithValue("@Id", saleReturn.Id.ToString());
+                cmdReturn.Parameters.AddWithValue("@SaleId", saleReturn.SaleId.ToString());
+                cmdReturn.Parameters.AddWithValue("@CreatedAt", saleReturn.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
+                cmdReturn.Parameters.AddWithValue("@Amount", saleReturn.Amount);
+                cmdReturn.Parameters.AddWithValue("@RestoreStock", saleReturn.RestoreStock ? 1 : 0);
+                cmdReturn.Parameters.AddWithValue("@Notes", saleReturn.Notes);
+                cmdReturn.ExecuteNonQuery();
+            }
+
+            foreach (var line in saleReturn.Lines)
+            {
+                using var cmdLine = new SqliteCommand(@"
+                    INSERT INTO SaleReturnLines
+                        (ReturnId, ProductId, Barcode, ProductName, Quantity, UnitPrice, CostPrice, LineAmount)
+                    VALUES
+                        (@ReturnId, @ProductId, @Barcode, @ProductName, @Quantity, @UnitPrice, @CostPrice, @LineAmount);",
+                    connection, transaction);
+                cmdLine.Parameters.AddWithValue("@ReturnId", saleReturn.Id.ToString());
+                cmdLine.Parameters.AddWithValue("@ProductId", line.ProductId.ToString());
+                cmdLine.Parameters.AddWithValue("@Barcode", line.Barcode);
+                cmdLine.Parameters.AddWithValue("@ProductName", line.ProductName);
+                cmdLine.Parameters.AddWithValue("@Quantity", line.Quantity);
+                cmdLine.Parameters.AddWithValue("@UnitPrice", line.UnitPrice);
+                cmdLine.Parameters.AddWithValue("@CostPrice", line.CostPrice);
+                cmdLine.Parameters.AddWithValue("@LineAmount", line.LineAmount);
+                cmdLine.ExecuteNonQuery();
+            }
+
+            using (var cmdCash = new SqliteCommand(@"
+                INSERT INTO CashMovements (Id, BusinessDate, Kind, Amount, Concept, CreatedAt)
+                VALUES (@Id, @BusinessDate, @Kind, @Amount, @Concept, @CreatedAt);", connection, transaction))
+            {
+                cmdCash.Parameters.AddWithValue("@Id", cashMovement.Id.ToString());
+                cmdCash.Parameters.AddWithValue("@BusinessDate", cashMovement.BusinessDate.ToString("yyyy-MM-dd"));
+                cmdCash.Parameters.AddWithValue("@Kind", cashMovement.KindCode);
+                cmdCash.Parameters.AddWithValue("@Amount", cashMovement.Amount);
+                cmdCash.Parameters.AddWithValue("@Concept", cashMovement.Concept);
+                cmdCash.Parameters.AddWithValue("@CreatedAt", cashMovement.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
+                cmdCash.ExecuteNonQuery();
+            }
+
+            InsertStockMovements(connection, transaction, movements);
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
     public GrossProfitTotals GetGrossProfitTotals(DateTime startDate, DateTime endDate)
     {
         using var connection = _context.CreateConnection();
@@ -706,12 +885,33 @@ public class SqliteProductRepository : IProductRepository
 
         string query = @"
             SELECT
-                COALESCE(SUM(d.Quantity * COALESCE(d.UnitPrice, d.PriceSold)), 0),
-                COALESCE(SUM(d.Quantity * COALESCE(d.CostPrice, 0)), 0)
-            FROM SaleDetails d
-            INNER JOIN Sales s ON s.Id = d.SaleId
-            WHERE date(s.CreatedAt) >= date(@StartDate)
-              AND date(s.CreatedAt) <= date(@EndDate);";
+                COALESCE(SUM(lineRevenue - discount), 0)
+                    - COALESCE((
+                        SELECT SUM(l.LineAmount)
+                        FROM SaleReturnLines l
+                        INNER JOIN SaleReturns r ON r.Id = l.ReturnId
+                        WHERE date(r.CreatedAt) >= date(@StartDate)
+                          AND date(r.CreatedAt) <= date(@EndDate)
+                    ), 0),
+                COALESCE(SUM(cost), 0)
+                    - COALESCE((
+                        SELECT SUM(l.Quantity * l.CostPrice)
+                        FROM SaleReturnLines l
+                        INNER JOIN SaleReturns r ON r.Id = l.ReturnId
+                        WHERE date(r.CreatedAt) >= date(@StartDate)
+                          AND date(r.CreatedAt) <= date(@EndDate)
+                    ), 0)
+            FROM (
+                SELECT
+                    SUM(d.Quantity * COALESCE(d.UnitPrice, d.PriceSold)) AS lineRevenue,
+                    SUM(d.Quantity * COALESCE(d.CostPrice, 0)) AS cost,
+                    COALESCE(s.DiscountAmount, 0) AS discount
+                FROM SaleDetails d
+                INNER JOIN Sales s ON s.Id = d.SaleId
+                WHERE date(s.CreatedAt) >= date(@StartDate)
+                  AND date(s.CreatedAt) <= date(@EndDate)
+                GROUP BY s.Id
+            );";
 
         using var command = new SqliteCommand(query, connection);
         command.Parameters.AddWithValue("@StartDate", startDate.ToString("yyyy-MM-dd"));
@@ -828,20 +1028,22 @@ public class SqliteProductRepository : IProductRepository
 
     private static Sale MapSaleHeader(SqliteDataReader reader)
     {
-        decimal total = reader.GetDecimal(2);
+        decimal netTotal = ReadMoney(reader, 2);
         string method = reader.IsDBNull(3) ? "EFECTIVO" : reader.GetString(3);
         string cardReference = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
         decimal amountReceived = reader.IsDBNull(5) ? 0m : reader.GetDecimal(5);
         decimal cardAmount = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetDecimal(6) : 0m;
+        decimal discount = reader.FieldCount > 7 && !reader.IsDBNull(7) ? ReadMoney(reader, 7) : 0m;
 
         return new Sale(
             Guid.Parse(reader.GetString(0)),
             DateTime.Parse(reader.GetString(1)),
-            new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, total, 0m) },
+            new List<SaleItem> { new SaleItem(Guid.Empty, "", "Resumen", 1, netTotal + discount, 0m) },
             method,
             cardReference,
             amountReceived,
-            cardAmount);
+            cardAmount,
+            discount);
     }
 
     private static Product MapProduct(SqliteDataReader reader)
@@ -873,6 +1075,20 @@ public class SqliteProductRepository : IProductRepository
         }
 
         bool isActive = reader.FieldCount <= 9 || reader.IsDBNull(9) || Convert.ToInt64(reader.GetValue(9)) != 0;
+        byte[]? image = reader.FieldCount > 10 && !reader.IsDBNull(10)
+            ? (byte[])reader.GetValue(10)
+            : null;
+
+        DiscountKind discountKind = DiscountKind.None;
+        if (reader.FieldCount > 11 && !reader.IsDBNull(11)
+            && Enum.TryParse(reader.GetString(11), ignoreCase: true, out DiscountKind parsedKind))
+        {
+            discountKind = parsedKind;
+        }
+
+        decimal discountValue = reader.FieldCount > 12 && !reader.IsDBNull(12)
+            ? ReadMoney(reader, 12)
+            : 0m;
 
         return new Product(
             Guid.Parse(reader.GetString(0)),
@@ -884,7 +1100,14 @@ public class SqliteProductRepository : IProductRepository
             unit,
             minStock,
             desiredStock,
-            isActive);
+            isActive,
+            image,
+            discountKind,
+            discountValue,
+            ReadDateOnly(reader, 13),
+            ReadDateOnly(reader, 14),
+            ReadNullableMoney(reader, 15),
+            ReadNullableQuantity(reader, 16, unit));
     }
 
     private static void InsertStockMovements(
@@ -935,6 +1158,49 @@ public class SqliteProductRepository : IProductRepository
         command.Parameters.AddWithValue("@Unit", product.Unit.ToString());
         command.Parameters.AddWithValue("@MinStock", product.MinStock);
         command.Parameters.AddWithValue("@DesiredStock", product.DesiredStock);
+        command.Parameters.Add("@Image", SqliteType.Blob).Value =
+            product.Image is { Length: > 0 } ? product.Image : DBNull.Value;
+        command.Parameters.AddWithValue("@DiscountKind", product.DiscountKind.ToString());
+        command.Parameters.AddWithValue("@DiscountValue", product.DiscountValue);
+        command.Parameters.AddWithValue(
+            "@DiscountStartsOn",
+            product.DiscountStartsOn?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@DiscountEndsOn",
+            product.DiscountEndsOn?.ToString("yyyy-MM-dd") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@WholesalePrice",
+            product.WholesalePrice.HasValue ? product.WholesalePrice.Value : DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@WholesaleMinQuantity",
+            product.WholesaleMinQuantity.HasValue ? product.WholesaleMinQuantity.Value : DBNull.Value);
+    }
+
+    private static DateOnly? ReadDateOnly(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.FieldCount <= ordinal || reader.IsDBNull(ordinal))
+            return null;
+
+        return DateOnly.Parse(reader.GetString(ordinal));
+    }
+
+    private static decimal? ReadNullableMoney(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.FieldCount <= ordinal || reader.IsDBNull(ordinal))
+            return null;
+
+        return ReadMoney(reader, ordinal);
+    }
+
+    private static decimal? ReadNullableQuantity(SqliteDataReader reader, int ordinal, UnitOfMeasure unit)
+    {
+        if (reader.FieldCount <= ordinal || reader.IsDBNull(ordinal))
+            return null;
+
+        return decimal.Round(
+            Convert.ToDecimal(reader.GetValue(ordinal)),
+            unit.MaxDecimalPlaces(),
+            MidpointRounding.AwayFromZero);
     }
 
     private static decimal ReadMoney(SqliteDataReader reader, int ordinal) =>

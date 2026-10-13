@@ -194,8 +194,15 @@ internal static class SectionHelpText
         "• El monto no puede ser negativo.";
 
     public const string CheckoutTotal =
-        "Total a cobrar de la venta actual (suma del carrito).\n\n" +
+        "Total a cobrar de la venta actual.\n\n" +
+        "Si hay descuento de ticket, este monto ya es el neto.\n" +
         "No incluye movimientos de caja ajenos a la venta.";
+
+    public const string CheckoutDiscount =
+        "Descuento sobre el total del ticket, aparte del descuento de cada producto.\n\n" +
+        "• Porcentaje: baja el subtotal ese tanto por ciento.\n" +
+        "• Monto fijo: resta esa cantidad al subtotal.\n" +
+        "• El total a cobrar no puede quedar en cero.";
 
     public const string CheckoutPayment =
         "Elige cómo paga el cliente.\n\n" +
@@ -235,7 +242,8 @@ internal static class SectionHelpText
         "Acciones rápidas del mostrador.\n\n" +
         "• Cobrar (F5): abre el pago de la venta activa.\n" +
         "• Vaciar: quita todos los renglones del carrito actual.\n" +
-        "• Nueva / cerrar venta: administra pestañas de carrito.";
+        "• Nueva / cerrar venta: administra pestañas de carrito.\n" +
+        "• Inventario (F8): consulta existencias sin agregar al carrito.";
 
     public const string GrossProfitReport =
         "Consulta el margen real de las ventas en un rango de fechas.\n\n" +
@@ -299,6 +307,33 @@ internal static class SectionHelpText
         "• Al escanear, agregar al carrito: cada lectura suma 1 a la cantidad. Si está apagado, solo busca.\n" +
         "• Cada lectura reemplaza el código anterior para que no se duplique.\n\n" +
         "Probar lectura muestra el último código recibido.";
+
+    public const string PeripheralsScale =
+        "Báscula de peso por puerto serie.\n\n" +
+        "• La báscula envía el peso en texto de forma continua (por ejemplo 1.250 o ST,GS, 1.250kg).\n" +
+        "• Al vender un producto en kilogramos, el diálogo de cantidad muestra ese peso.\n" +
+        "• Metro y litro se siguen capturando a mano.\n" +
+        "• ST marca un peso estable; US, uno inestable.\n\n" +
+        "Probar lectura muestra el último peso recibido.";
+
+    public const string Inventory =
+        "Consulta de existencias. No agrega productos al carrito.\n\n" +
+        "• Se abre con F8, desde Productos o desde la barra.\n" +
+        "• Busca por nombre o código mientras escribes.\n" +
+        "• Enter no vende ni suma cantidad.\n" +
+        "• Escape cierra esta ventana.\n" +
+        "• Exportar Excel guarda solo las filas que estás viendo (respeta el filtro).";
+
+    public const string InventoryList =
+        "Productos activos del catálogo.\n\n" +
+        "• Rojo: agotado. Amarillo: bajo el mínimo.\n" +
+        "• Los productos ocultos no aparecen.\n" +
+        "• Selecciona una fila para ver la ficha.\n" +
+        "• Clic derecho: editar, auditar stock, ver kárdex o quitar del mostrador.";
+
+    public const string InventoryDetail =
+        "Datos del producto seleccionado: código, unidad, stock, mínimo, deseado, precio y costo.\n\n" +
+        "Solo información. No modifica el inventario ni la venta.";
 
     public const string KardexList =
         "Auditoría paso a paso del stock.\n\n" +

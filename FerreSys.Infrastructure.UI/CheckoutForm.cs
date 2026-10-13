@@ -1,5 +1,6 @@
 using System.Globalization;
 using FerreSys.Application;
+using FerreSys.Domain;
 
 namespace FerreSys.Infrastructure.UI;
 
@@ -9,8 +10,11 @@ public partial class CheckoutForm : Form
     public string CardReference { get; private set; } = string.Empty;
     public decimal AmountReceived { get; private set; }
     public decimal CardAmount { get; private set; }
+    public decimal DiscountAmount { get; private set; }
 
-    private readonly decimal _totalAmount;
+    private readonly decimal _subtotal;
+    private decimal _totalAmount;
+    private bool _syncingDiscount;
     private RadioButton rbCash = null!;
     private RadioButton rbCard = null!;
     private RadioButton rbMixed = null!;
@@ -25,11 +29,17 @@ public partial class CheckoutForm : Form
     private Label lblChangeBreakdown = null!;
     private Button btnConfirm = null!;
     private readonly List<Button> _billButtons = new();
+    private ComboBox cboTicketDiscount = null!;
+    private NumericUpDown numTicketDiscount = null!;
+    private Label lblSubtotal = null!;
+    private Label lblTicketDiscount = null!;
+    private Label lblPayable = null!;
 
     private static readonly decimal[] Bills = [20m, 50m, 100m, 200m, 500m, 1000m];
 
     public CheckoutForm(decimal totalAmount)
     {
+        _subtotal = totalAmount;
         _totalAmount = totalAmount;
         AmountReceived = totalAmount;
         InitializeComponent(totalAmount);
@@ -38,7 +48,7 @@ public partial class CheckoutForm : Form
     private void InitializeComponent(decimal totalAmount)
     {
         Text = "Procesar Pago - Posly";
-        Size = new Size(520, 640);
+        Size = new Size(520, 760);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -52,19 +62,21 @@ public partial class CheckoutForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             Padding = new Padding(10, 8, 10, 10),
             BackColor = UiTheme.WindowBg
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
 
         root.Controls.Add(CreateTotalSection(totalAmount), 0, 0);
-        root.Controls.Add(CreatePaymentSection(), 0, 1);
-        root.Controls.Add(CreateCashSection(), 0, 2);
-        root.Controls.Add(CreateActionsSection(), 0, 3);
+        root.Controls.Add(CreateDiscountSection(), 0, 1);
+        root.Controls.Add(CreatePaymentSection(), 0, 2);
+        root.Controls.Add(CreateCashSection(), 0, 3);
+        root.Controls.Add(CreateActionsSection(), 0, 4);
 
         Controls.Add(root);
         txtReceived.Text = totalAmount.ToString("N2");
@@ -105,7 +117,7 @@ public partial class CheckoutForm : Form
             Margin = new Padding(0)
         };
 
-        var lblAmount = new Label
+        lblPayable = new Label
         {
             Text = $"${totalAmount:N2}",
             Dock = DockStyle.Fill,
@@ -117,9 +129,150 @@ public partial class CheckoutForm : Form
         };
 
         stack.Controls.Add(lblCaption, 0, 0);
-        stack.Controls.Add(lblAmount, 0, 1);
+        stack.Controls.Add(lblPayable, 0, 1);
         gb.Controls.Add(stack);
         return gb;
+    }
+
+    private GroupBox CreateDiscountSection()
+    {
+        var gb = UiHelp.CreateGroupBox("Descuento del ticket", SectionHelpText.CheckoutDiscount);
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 3,
+            Padding = new Padding(8, 6, 8, 4),
+            BackColor = UiTheme.PanelBg
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+
+        cboTicketDiscount = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+        cboTicketDiscount.Items.AddRange(["Ninguno", "Porcentaje", "Monto fijo"]);
+        cboTicketDiscount.SelectedIndex = 0;
+        cboTicketDiscount.SelectedIndexChanged += (_, _) => ApplyTicketDiscount();
+
+        numTicketDiscount = new NumericUpDown
+        {
+            DecimalPlaces = 2,
+            Maximum = 99999,
+            Dock = DockStyle.Fill,
+            Enabled = false
+        };
+        numTicketDiscount.ValueChanged += (_, _) => ApplyTicketDiscount();
+
+        lblSubtotal = new Label
+        {
+            Text = $"Subtotal: ${_subtotal:N2}",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = UiTheme.Text
+        };
+        lblTicketDiscount = new Label
+        {
+            Text = "Sin descuento de ticket",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = UiTheme.Text
+        };
+
+        grid.Controls.Add(cboTicketDiscount, 0, 0);
+        grid.Controls.Add(numTicketDiscount, 1, 0);
+        grid.Controls.Add(lblSubtotal, 0, 1);
+        grid.SetColumnSpan(lblSubtotal, 2);
+        grid.Controls.Add(lblTicketDiscount, 0, 2);
+        grid.SetColumnSpan(lblTicketDiscount, 2);
+        gb.Controls.Add(grid);
+        return gb;
+    }
+
+    private void ApplyTicketDiscount()
+    {
+        if (_syncingDiscount || cboTicketDiscount == null || numTicketDiscount == null || lblPayable == null)
+            return;
+
+        _syncingDiscount = true;
+        try
+        {
+            DiscountKind kind = cboTicketDiscount.SelectedIndex switch
+            {
+                1 => DiscountKind.Percent,
+                2 => DiscountKind.FixedAmount,
+                _ => DiscountKind.None
+            };
+
+            numTicketDiscount.Enabled = kind != DiscountKind.None;
+            decimal cap = kind == DiscountKind.Percent ? 99.99m : 99999m;
+            if (numTicketDiscount.Value > cap)
+                numTicketDiscount.Value = cap;
+            numTicketDiscount.Maximum = cap;
+
+            decimal previous = _totalAmount;
+            decimal raw = kind switch
+            {
+                DiscountKind.Percent => decimal.Round(_subtotal * numTicketDiscount.Value / 100m, 2, MidpointRounding.AwayFromZero),
+                DiscountKind.FixedAmount => decimal.Round(numTicketDiscount.Value, 2, MidpointRounding.AwayFromZero),
+                _ => 0m
+            };
+
+            if (raw > 0m && raw >= _subtotal)
+            {
+                _totalAmount = _subtotal;
+                lblTicketDiscount.Text = "El descuento debe ser menor al subtotal.";
+                lblTicketDiscount.ForeColor = UiTheme.StatusDanger;
+            }
+            else
+            {
+                _totalAmount = _subtotal - raw;
+                lblTicketDiscount.Text = raw > 0m ? $"Descuento: ${raw:N2}" : "Sin descuento de ticket";
+                lblTicketDiscount.ForeColor = UiTheme.Text;
+            }
+
+            lblSubtotal.Text = $"Subtotal: ${_subtotal:N2}";
+            lblPayable.Text = $"${_totalAmount:N2}";
+
+            if (rbCash != null && rbCash.Checked && TryParseMoney(txtReceived.Text, out decimal received) && received == previous)
+                txtReceived.Text = _totalAmount.ToString("N2");
+        }
+        finally
+        {
+            _syncingDiscount = false;
+        }
+
+        if (rbCash != null)
+            RefreshChange();
+    }
+
+    private bool TryCommitTicketDiscount()
+    {
+        DiscountKind kind = cboTicketDiscount.SelectedIndex switch
+        {
+            1 => DiscountKind.Percent,
+            2 => DiscountKind.FixedAmount,
+            _ => DiscountKind.None
+        };
+
+        decimal raw = kind switch
+        {
+            DiscountKind.Percent => decimal.Round(_subtotal * numTicketDiscount.Value / 100m, 2, MidpointRounding.AwayFromZero),
+            DiscountKind.FixedAmount => decimal.Round(numTicketDiscount.Value, 2, MidpointRounding.AwayFromZero),
+            _ => 0m
+        };
+
+        if (raw > 0m && raw >= _subtotal)
+        {
+            MessageBox.Show(
+                "El descuento del ticket debe ser menor al subtotal.",
+                "Descuento",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return false;
+        }
+
+        DiscountAmount = raw;
+        _totalAmount = _subtotal - raw;
+        return true;
     }
 
     private GroupBox CreatePaymentSection()
@@ -579,6 +732,9 @@ public partial class CheckoutForm : Form
 
     private void BtnConfirm_Click(object? sender, EventArgs e)
     {
+        if (!TryCommitTicketDiscount())
+            return;
+
         if (rbCard.Checked)
         {
             SelectedPaymentMethod = "TARJETA";

@@ -8,6 +8,8 @@ public class SqliteDbContext
 
     public string DataFolder { get; }
 
+    public string DatabasePath { get; }
+
     public SqliteDbContext()
     {
         // Obtenemos la ruta de AppData/Local del usuario (ej: C:\Users\Nombre\AppData\Local\FerreSys)
@@ -23,8 +25,8 @@ public class SqliteDbContext
             Directory.CreateDirectory(appDataFolder);
         }
 
-        string databasePath = Path.Combine(appDataFolder, "ferresys.db");
-        _connectionString = $"Data Source={databasePath};";
+        DatabasePath = Path.Combine(appDataFolder, "ferresys.db");
+        _connectionString = $"Data Source={DatabasePath};";
 
         InitializeDatabase();
     }
@@ -47,6 +49,36 @@ public class SqliteDbContext
         source.BackupDatabase(destination);
     }
 
+    public void RestoreFrom(string backupPath)
+    {
+        if (string.IsNullOrWhiteSpace(backupPath) || !File.Exists(backupPath))
+            throw new FileNotFoundException("No se encontró el respaldo.", backupPath);
+
+        string fullBackup = Path.GetFullPath(backupPath);
+        string fullDb = Path.GetFullPath(DatabasePath);
+        if (string.Equals(fullBackup, fullDb, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("El archivo elegido es la base en uso.");
+
+        using (var connection = CreateConnection())
+        {
+            connection.Open();
+            using var checkpoint = connection.CreateCommand();
+            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            checkpoint.ExecuteNonQuery();
+        }
+
+        SqliteConnection.ClearAllPools();
+        File.Copy(fullBackup, fullDb, overwrite: true);
+        TryDelete(fullDb + "-wal");
+        TryDelete(fullDb + "-shm");
+    }
+
+    private static void TryDelete(string path)
+    {
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+
     private void InitializeDatabase()
     {
         using var connection = CreateConnection();
@@ -66,7 +98,8 @@ public class SqliteDbContext
             Unit TEXT NOT NULL DEFAULT 'Pieza',
             MinStock REAL NOT NULL DEFAULT 0,
             DesiredStock REAL NOT NULL DEFAULT 0,
-            IsActive INTEGER NOT NULL DEFAULT 1
+            IsActive INTEGER NOT NULL DEFAULT 1,
+            ImageBlob BLOB
         );
         CREATE INDEX IF NOT EXISTS idx_products_barcode ON Products(Barcode);
 
@@ -136,9 +169,53 @@ public class SqliteDbContext
         CREATE INDEX IF NOT EXISTS IX_StockMovements_OccurredAt
             ON StockMovements(OccurredAt);
 
+        CREATE TABLE IF NOT EXISTS SaleReturns (
+            Id TEXT PRIMARY KEY,
+            SaleId TEXT NOT NULL,
+            CreatedAt TEXT NOT NULL,
+            Amount REAL NOT NULL,
+            RestoreStock INTEGER NOT NULL,
+            Notes TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY(SaleId) REFERENCES Sales(Id)
+        );
+        CREATE INDEX IF NOT EXISTS IX_SaleReturns_SaleId ON SaleReturns(SaleId);
+
+        CREATE TABLE IF NOT EXISTS SaleReturnLines (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ReturnId TEXT NOT NULL,
+            ProductId TEXT NOT NULL,
+            Barcode TEXT NOT NULL,
+            ProductName TEXT NOT NULL,
+            Quantity REAL NOT NULL,
+            UnitPrice REAL NOT NULL,
+            CostPrice REAL NOT NULL,
+            LineAmount REAL NOT NULL,
+            FOREIGN KEY(ReturnId) REFERENCES SaleReturns(Id)
+        );
+        CREATE INDEX IF NOT EXISTS IX_SaleReturnLines_ReturnId ON SaleReturnLines(ReturnId);
+
         CREATE TABLE IF NOT EXISTS AppSettings (
             Key TEXT PRIMARY KEY,
             Value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS Users (
+            Id TEXT PRIMARY KEY,
+            EmployeeNumber TEXT NOT NULL UNIQUE,
+            Username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            PasswordSalt BLOB NOT NULL,
+            PasswordHash BLOB NOT NULL,
+            FirstName TEXT NOT NULL,
+            LastName TEXT NOT NULL,
+            BirthDate TEXT NOT NULL,
+            JobTitle TEXT NOT NULL DEFAULT '',
+            Phone TEXT NOT NULL DEFAULT '',
+            Email TEXT NOT NULL DEFAULT '',
+            HireDate TEXT,
+            Notes TEXT NOT NULL DEFAULT '',
+            PhotoBlob BLOB,
+            IsActive INTEGER NOT NULL DEFAULT 1,
+            Permissions INTEGER NOT NULL
         );
     ";
 
@@ -150,6 +227,9 @@ public class SqliteDbContext
         EnsureProductUnitColumn(connection);
         EnsureProductReorderColumns(connection);
         EnsureProductIsActiveColumn(connection);
+        EnsureProductImageColumn(connection);
+        EnsureProductPricingColumns(connection);
+        EnsureSaleDiscountColumn(connection);
         EnsureSaleDetailUnitColumn(connection);
         EnsureCashCloseReportColumns(connection);
     }
@@ -320,6 +400,69 @@ public class SqliteDbContext
             "CREATE INDEX IF NOT EXISTS IX_Products_IsActive ON Products (IsActive);",
             connection);
         index.ExecuteNonQuery();
+    }
+
+    private static void EnsureProductImageColumn(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(Products);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        if (columns.Contains("ImageBlob"))
+            return;
+
+        using var alter = new SqliteCommand(
+            "ALTER TABLE Products ADD COLUMN ImageBlob BLOB;",
+            connection);
+        alter.ExecuteNonQuery();
+    }
+
+    private static void EnsureProductPricingColumns(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(Products);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        void AddColumnIfMissing(string name, string definition)
+        {
+            if (columns.Contains(name))
+                return;
+            using var alter = new SqliteCommand(
+                $"ALTER TABLE Products ADD COLUMN {name} {definition};",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+
+        AddColumnIfMissing("DiscountKind", "TEXT NOT NULL DEFAULT 'None'");
+        AddColumnIfMissing("DiscountValue", "REAL NOT NULL DEFAULT 0");
+        AddColumnIfMissing("DiscountStartsOn", "TEXT");
+        AddColumnIfMissing("DiscountEndsOn", "TEXT");
+        AddColumnIfMissing("WholesalePrice", "REAL");
+        AddColumnIfMissing("WholesaleMinQuantity", "REAL");
+    }
+
+    private static void EnsureSaleDiscountColumn(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(Sales);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        if (columns.Contains("DiscountAmount"))
+            return;
+
+        using var alter = new SqliteCommand(
+            "ALTER TABLE Sales ADD COLUMN DiscountAmount REAL NOT NULL DEFAULT 0;",
+            connection);
+        alter.ExecuteNonQuery();
     }
 
     private static void EnsureSaleDetailUnitColumn(SqliteConnection connection)

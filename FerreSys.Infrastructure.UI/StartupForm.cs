@@ -1,3 +1,4 @@
+using FerreSys.Application;
 using FerreSys.Domain;
 using FerreSys.Infrastructure.Persistence;
 
@@ -72,7 +73,11 @@ internal sealed class StartupForm : Form
         SetStatus("Preparando datos...");
         try
         {
-            await Task.Run(static () => _ = new SqliteDbContext());
+            await Task.Run(static () =>
+            {
+                var database = new SqliteDbContext();
+                new EnsureAdminUserUseCase(new SqliteUserRepository(database)).Execute();
+            });
         }
         catch (Exception ex)
         {
@@ -102,9 +107,31 @@ internal sealed class StartupForm : Form
             return;
 
         Hide();
-        var main = new Form1(_args, subscription);
-        main.FormClosed += (_, _) => Close();
-        main.Show();
+        while (!IsDisposed)
+        {
+            User user;
+            using (var login = new LoginForm())
+            {
+                if (login.ShowDialog(this) != DialogResult.OK || login.User is null)
+                {
+                    Close();
+                    return;
+                }
+
+                user = login.User;
+            }
+
+            if (IsDisposed)
+                return;
+
+            using var main = new Form1(_args, subscription, user);
+            main.ShowDialog(this);
+            if (!main.SessionEnded)
+            {
+                Close();
+                return;
+            }
+        }
     }
 
     private void SetStatus(string text)

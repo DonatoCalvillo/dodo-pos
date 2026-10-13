@@ -18,7 +18,16 @@ public partial class AddProductForm : Form
     private NumericUpDown numStock = null!;
     private NumericUpDown numMinStock = null!;
     private NumericUpDown numDesiredStock = null!;
+    private ZoomImage previewImage = null!;
+    private byte[]? _imageBytes;
     private Button btnSave = null!;
+    private Button? btnPricing;
+    private DiscountKind _discountKind = DiscountKind.None;
+    private decimal _discountValue;
+    private DateOnly? _discountStartsOn;
+    private DateOnly? _discountEndsOn;
+    private decimal? _wholesalePrice;
+    private decimal? _wholesaleMinQuantity;
 
     public AddProductForm(AddProductUseCase addProductUseCase)
     {
@@ -39,7 +48,7 @@ public partial class AddProductForm : Form
     private void InitializeComponent()
     {
         this.Text = _isEditMode ? "Editar Producto - Posly" : "Registrar Nuevo Producto - Posly";
-        this.Size = new Size(420, 620);
+        this.Size = new Size(420, _isEditMode ? 760 : 700);
         this.FormBorderStyle = FormBorderStyle.FixedDialog;
         this.MaximizeBox = false;
         this.StartPosition = FormStartPosition.CenterParent;
@@ -109,22 +118,137 @@ public partial class AddProductForm : Form
             ForeColor = Color.DimGray
         };
 
+        var lblImage = new Label { Text = "Imagen:", Location = new Point(labelLeft, 470), Size = new Size(110, 20) };
+        previewImage = new ZoomImage
+        {
+            Location = new Point(inputLeft, 466),
+            Size = new Size(72, 72),
+            ShowBorder = true
+        };
+        ShowPreview(null);
+
+        var btnPickImage = new Button
+        {
+            Text = "Elegir",
+            Location = new Point(inputLeft + 80, 466),
+            Size = new Size(120, 28)
+        };
+        btnPickImage.Click += BtnPickImage_Click;
+
+        var btnClearImage = new Button
+        {
+            Text = "Quitar",
+            Location = new Point(inputLeft + 80, 500),
+            Size = new Size(120, 28)
+        };
+        btnClearImage.Click += (_, _) =>
+        {
+            _imageBytes = null;
+            ShowPreview(null);
+        };
+
         btnSave = new Button
         {
             Text = _isEditMode ? "Guardar Cambios" : "Guardar Producto",
-            Location = new Point(30, 465),
+            Location = new Point(30, _isEditMode ? 610 : 560),
             Size = new Size(320, 40),
             BackColor = _isEditMode ? Color.LightGoldenrodYellow : Color.LightBlue,
             Font = new Font("Arial", 10, FontStyle.Bold)
         };
         btnSave.Click += BtnSave_Click;
 
+        if (_isEditMode)
+        {
+            btnPricing = new Button
+            {
+                Text = "Precios especiales...",
+                Location = new Point(30, 560),
+                Size = new Size(320, 36)
+            };
+            btnPricing.Click += BtnPricing_Click;
+        }
+        FormClosed += (_, _) => ReleasePreview();
+
         this.Controls.AddRange(new Control[]
         {
             lblBarcode, txtBarcode, lblName, txtName, lblCost, numCostPrice,
             lblRetail, numRetailPrice, lblUnit, cboUnit, lblStock, numStock,
-            lblMinStock, numMinStock, lblDesiredStock, numDesiredStock, lblHint, btnSave
+            lblMinStock, numMinStock, lblDesiredStock, numDesiredStock, lblHint,
+            lblImage, previewImage, btnPickImage, btnClearImage, btnSave
         });
+        if (btnPricing != null)
+            Controls.Add(btnPricing);
+    }
+
+    private void BtnPricing_Click(object? sender, EventArgs e)
+    {
+        if (_productToEdit == null)
+            return;
+
+        using var dialog = new ProductPricingForm(
+            _productToEdit,
+            numCostPrice.Value,
+            numRetailPrice.Value,
+            SelectedUnit(),
+            _discountKind,
+            _discountValue,
+            _discountStartsOn,
+            _discountEndsOn,
+            _wholesalePrice,
+            _wholesaleMinQuantity);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        _discountKind = dialog.DiscountKind;
+        _discountValue = dialog.DiscountValue;
+        _discountStartsOn = dialog.DiscountStartsOn;
+        _discountEndsOn = dialog.DiscountEndsOn;
+        _wholesalePrice = dialog.WholesalePrice;
+        _wholesaleMinQuantity = dialog.WholesaleMinQuantity;
+    }
+
+    private void BtnPickImage_Click(object? sender, EventArgs e)
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Elegir imagen del producto",
+            Filter = "Imágenes (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        try
+        {
+            _imageBytes = ProductImages.EncodeThumbnail(dialog.FileName);
+            ShowPreview(_imageBytes);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"No se pudo leer la imagen.\n\n{ex.Message}",
+                "Imagen",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+    }
+
+    private void ShowPreview(byte[]? jpeg)
+    {
+        Image? previous = previewImage.Picture;
+        previewImage.Picture = jpeg is { Length: > 0 }
+            ? ProductImages.ForGrid(jpeg)
+            : ProductImages.Placeholder;
+        if (previous != null && !ReferenceEquals(previous, ProductImages.Placeholder))
+            previous.Dispose();
+    }
+
+    private void ReleasePreview()
+    {
+        Image? picture = previewImage.Picture;
+        previewImage.Picture = null;
+        if (picture != null && !ReferenceEquals(picture, ProductImages.Placeholder))
+            picture.Dispose();
     }
 
     private void LoadProductData()
@@ -140,6 +264,14 @@ public partial class AddProductForm : Form
             numStock.Value = Math.Min(numStock.Maximum, _productToEdit.Stock);
             numMinStock.Value = Math.Min(numMinStock.Maximum, _productToEdit.MinStock);
             numDesiredStock.Value = Math.Min(numDesiredStock.Maximum, _productToEdit.DesiredStock);
+            _imageBytes = _productToEdit.Image;
+            _discountKind = _productToEdit.DiscountKind;
+            _discountValue = _productToEdit.DiscountValue;
+            _discountStartsOn = _productToEdit.DiscountStartsOn;
+            _discountEndsOn = _productToEdit.DiscountEndsOn;
+            _wholesalePrice = _productToEdit.WholesalePrice;
+            _wholesaleMinQuantity = _productToEdit.WholesaleMinQuantity;
+            ShowPreview(_imageBytes);
         }
     }
 
@@ -177,7 +309,14 @@ public partial class AddProductForm : Form
                 numStock.Value,
                 unit,
                 numMinStock.Value,
-                numDesiredStock.Value
+                numDesiredStock.Value,
+                image: _imageBytes,
+                discountKind: _discountKind,
+                discountValue: _discountValue,
+                discountStartsOn: _discountStartsOn,
+                discountEndsOn: _discountEndsOn,
+                wholesalePrice: _wholesalePrice,
+                wholesaleMinQuantity: _wholesaleMinQuantity
             );
 
             if (_isEditMode)

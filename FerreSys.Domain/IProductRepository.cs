@@ -8,8 +8,15 @@ public interface IProductRepository
     // Fetch a single product via barcode scanner
     Product? GetByBarcode(string barcode);
 
+    Product? GetById(Guid productId);
+
     // Fuzzy search for the smart counter dropdown
     List<Product> SearchByName(string term);
+
+    /// <summary>
+    /// Active catalog ordered by name. Hidden products are excluded.
+    /// </summary>
+    List<Product> ListActive();
 
     // CRITICAL FOR MVP: Count total items to enforce the 200-product free limit
     int GetTotalCount();
@@ -90,4 +97,17 @@ public interface IProductRepository
     CashMovementDayTotals GetCashMovementTotals(DateTime businessDate);
 
     List<ReorderSuggestionLine> GetReorderSuggestions();
+
+    Sale? FindSale(Guid saleId);
+
+    SaleReturnTotals GetSaleReturnTotals(Guid saleId);
+
+    /// <summary>
+    /// Persists the return, its lines, the cash exit and optional stock updates in one transaction.
+    /// </summary>
+    void SaveSaleReturn(
+        SaleReturn saleReturn,
+        CashMovement cashMovement,
+        IReadOnlyList<Product> products,
+        IReadOnlyList<StockMovement> movements);
 }

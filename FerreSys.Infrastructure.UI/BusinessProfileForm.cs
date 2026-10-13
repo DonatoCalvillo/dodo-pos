@@ -1,5 +1,6 @@
 using FerreSys.Application;
 using FerreSys.Domain;
+using FerreSys.Infrastructure.Persistence;
 
 namespace FerreSys.Infrastructure.UI;
 
@@ -7,6 +8,7 @@ public sealed class BusinessProfileForm : Form
 {
     private readonly IAppSettingsStore _settings;
     private readonly LocalSubscriptionService _subscription;
+    private readonly LocalBackupService _backups;
     private readonly Font _previewFont = new("Consolas", 8.25f);
 
     private ZoomImage picLogo = null!;
@@ -20,6 +22,8 @@ public sealed class BusinessProfileForm : Form
     private TextBox txtReturnPolicy = null!;
     private TextBox txtNote = null!;
     private ComboBox cmbPaper = null!;
+    private ComboBox cmbBackupInterval = null!;
+    private ListView lstBackups = null!;
     private CheckedListBox lstHeader = null!;
     private CheckedListBox lstFooter = null!;
     private Panel paperHost = null!;
@@ -31,10 +35,11 @@ public sealed class BusinessProfileForm : Form
     private bool _loading;
     private bool _refreshing;
 
-    public BusinessProfileForm(IAppSettingsStore settings, LocalSubscriptionService subscription)
+    public BusinessProfileForm(IAppSettingsStore settings, LocalSubscriptionService subscription, LocalBackupService backups)
     {
         _settings = settings;
         _subscription = subscription;
+        _backups = backups;
         BuildUi();
         LoadProfile();
         FormClosed += (_, _) =>
@@ -59,14 +64,13 @@ public sealed class BusinessProfileForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 2,
+            RowCount = 1,
             Padding = new Padding(10),
             BackColor = UiTheme.WindowBg
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
 
         var left = new TableLayoutPanel
         {
@@ -88,11 +92,168 @@ public sealed class BusinessProfileForm : Form
 
         root.Controls.Add(left, 0, 0);
         root.Controls.Add(CreatePreview(), 1, 0);
+
+        var tabs = new TabControl { Dock = DockStyle.Fill, Font = UiTheme.Ui };
+        var datos = new TabPage("Datos") { BackColor = UiTheme.WindowBg, Padding = new Padding(0) };
+        datos.Controls.Add(root);
+        var respaldos = new TabPage("Respaldos") { BackColor = UiTheme.WindowBg, Padding = new Padding(8) };
+        respaldos.Controls.Add(CreateBackups());
+        tabs.TabPages.Add(datos);
+        tabs.TabPages.Add(respaldos);
+
+        var shell = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(0, 0, 10, 6),
+            BackColor = UiTheme.WindowBg
+        };
+        shell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        shell.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         var actions = CreateActions();
-        root.Controls.Add(actions, 0, 1);
-        root.SetColumnSpan(actions, 2);
-        Controls.Add(root);
+        shell.Controls.Add(tabs, 0, 0);
+        shell.Controls.Add(actions, 0, 1);
+        Controls.Add(shell);
         Shown += (_, _) => RefreshPreview();
+    }
+
+    private Control CreateBackups()
+    {
+        var host = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = UiTheme.WindowBg
+        };
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 148));
+        host.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var schedule = UiHelp.CreateGroupBox("Automático");
+        var grid = Grid(2, 3, 118);
+        cmbBackupInterval = new ComboBox
+        {
+            Dock = DockStyle.Left,
+            Width = 180,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = UiTheme.Ui
+        };
+        cmbBackupInterval.Items.Add(new IntervalChoice("Al cerrar", 0));
+        cmbBackupInterval.Items.Add(new IntervalChoice("Cada hora", 1));
+        cmbBackupInterval.Items.Add(new IntervalChoice("Cada 6 horas", 6));
+        cmbBackupInterval.Items.Add(new IntervalChoice("Cada 12 horas", 12));
+        cmbBackupInterval.Items.Add(new IntervalChoice("Cada día", 24));
+        var folder = new Label
+        {
+            Text = _backups.Folder,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = UiTheme.Ui,
+            AutoEllipsis = true
+        };
+        var now = new Button { Text = "Respaldar ahora", AutoSize = true, Font = UiTheme.Ui, Anchor = AnchorStyles.Left };
+        now.Click += (_, _) => CreateBackupNow();
+        AddRow(grid, 0, "Frecuencia", cmbBackupInterval);
+        AddRow(grid, 1, "Carpeta", folder);
+        AddRow(grid, 2, "", now);
+        schedule.Controls.Add(grid);
+
+        var copies = UiHelp.CreateGroupBox("Última semana");
+        var copiesLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(8, 16, 8, 6),
+            BackColor = UiTheme.PanelBg
+        };
+        copiesLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        copiesLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        lstBackups = new ListView
+        {
+            Dock = DockStyle.Fill,
+            View = View.Details,
+            FullRowSelect = true,
+            HideSelection = false,
+            Font = UiTheme.Ui,
+            MultiSelect = false
+        };
+        lstBackups.Columns.Add("Fecha", 220);
+        lstBackups.Columns.Add("Tamaño", 120);
+        var restore = new Button { Text = "Restaurar seleccionado", AutoSize = true, Font = UiTheme.Ui, Anchor = AnchorStyles.Left };
+        restore.Click += (_, _) => RestoreSelected();
+        copiesLayout.Controls.Add(lstBackups, 0, 0);
+        copiesLayout.Controls.Add(restore, 0, 1);
+        copies.Controls.Add(copiesLayout);
+
+        host.Controls.Add(schedule, 0, 0);
+        host.Controls.Add(copies, 0, 1);
+        return host;
+    }
+
+    private void CreateBackupNow()
+    {
+        try
+        {
+            _backups.CreateBackup();
+            ReloadBackups();
+            MessageBox.Show("Respaldo guardado en Documentos\\Posly_Backups.", "Respaldos", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "No se pudo respaldar", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void RestoreSelected()
+    {
+        if (lstBackups.SelectedItems.Count == 0 || lstBackups.SelectedItems[0].Tag is not string path)
+        {
+            MessageBox.Show("Elige un respaldo de la lista.", "Respaldos", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        DialogResult confirm = MessageBox.Show(
+            "Se reemplazarán los datos actuales por este respaldo y Posly se reiniciará.\n\n¿Continuar?",
+            "Restaurar respaldo",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        if (confirm != DialogResult.Yes)
+            return;
+
+        try
+        {
+            _backups.Restore(path);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "No se pudo restaurar", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        System.Windows.Forms.Application.Restart();
+    }
+
+    private void ReloadBackups()
+    {
+        lstBackups.Items.Clear();
+        foreach (LocalBackupCopy copy in _backups.ListRecent())
+        {
+            var item = new ListViewItem(copy.CreatedLocal.ToString("dd/MM/yyyy HH:mm"));
+            item.SubItems.Add(FormatSize(copy.SizeBytes));
+            item.Tag = copy.Path;
+            lstBackups.Items.Add(item);
+        }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024)
+            return $"{bytes} B";
+        if (bytes < 1024 * 1024)
+            return $"{bytes / 1024.0:0.#} KB";
+        return $"{bytes / (1024.0 * 1024.0):0.#} MB";
     }
 
     private Control CreateIdentity()
@@ -323,6 +484,8 @@ public sealed class BusinessProfileForm : Form
         FillList(lstHeader, TicketLayout.HeaderCatalog, profile.HeaderLayout);
         FillList(lstFooter, TicketLayout.FooterCatalog, profile.FooterLayout);
         ShowIdentityLogo(_settings.ResolveTicketLogoPath());
+        SelectBackupInterval(_settings.GetLocalBackupSettings().IntervalHours);
+        ReloadBackups();
         _loading = false;
         RefreshPreview();
     }
@@ -390,6 +553,7 @@ public sealed class BusinessProfileForm : Form
             }
 
             _settings.SaveTicketProfile(ReadProfile(logoFile));
+            SaveBackupInterval();
             DialogResult = DialogResult.OK;
             Close();
         }
@@ -670,6 +834,39 @@ public sealed class BusinessProfileForm : Form
 
     private TicketPaperWidth SelectedPaper() =>
         cmbPaper.SelectedItem is Choice choice ? choice.Value : TicketPaperWidth.Mm58;
+
+    private void SaveBackupInterval()
+    {
+        LocalBackupSettings current = _settings.GetLocalBackupSettings();
+        _settings.SaveLocalBackupSettings(new LocalBackupSettings
+        {
+            IntervalHours = SelectedBackupInterval(),
+            LastBackupUtc = current.LastBackupUtc
+        });
+    }
+
+    private void SelectBackupInterval(int hours)
+    {
+        for (int i = 0; i < cmbBackupInterval.Items.Count; i++)
+        {
+            if (cmbBackupInterval.Items[i] is IntervalChoice choice && choice.Hours == hours)
+            {
+                cmbBackupInterval.SelectedIndex = i;
+                return;
+            }
+        }
+
+        cmbBackupInterval.SelectedIndex = 0;
+    }
+
+    private int SelectedBackupInterval() =>
+        cmbBackupInterval.SelectedItem is IntervalChoice choice ? choice.Hours : 0;
+
+    private sealed class IntervalChoice(string label, int hours)
+    {
+        public int Hours { get; } = hours;
+        public override string ToString() => label;
+    }
 
     private sealed class LayoutRow
     {
