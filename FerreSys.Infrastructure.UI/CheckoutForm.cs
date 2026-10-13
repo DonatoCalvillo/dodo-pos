@@ -66,7 +66,7 @@ public partial class CheckoutForm : Form
             Padding = new Padding(10, 8, 10, 10),
             BackColor = UiTheme.WindowBg
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -100,11 +100,11 @@ public partial class CheckoutForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            Padding = new Padding(8, 10, 8, 4),
+            Padding = new Padding(8, 2, 8, 2),
             BackColor = UiTheme.PanelBg
         };
-        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
-        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
+        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
+        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var lblCaption = new Label
         {
@@ -113,18 +113,19 @@ public partial class CheckoutForm : Form
             Font = UiTheme.UiBold,
             ForeColor = UiTheme.Total,
             BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.BottomCenter,
+            TextAlign = ContentAlignment.MiddleCenter,
             Margin = new Padding(0)
         };
 
         lblPayable = new Label
         {
-            Text = $"${totalAmount:N2}",
+            Text = totalAmount.ToString("C2", CultureInfo.GetCultureInfo("es-MX")),
             Dock = DockStyle.Fill,
             Font = UiTheme.TotalFont,
             ForeColor = UiTheme.Total,
             BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.TopCenter,
+            TextAlign = ContentAlignment.MiddleCenter,
+            AutoEllipsis = false,
             Margin = new Padding(0)
         };
 
@@ -230,7 +231,7 @@ public partial class CheckoutForm : Form
             }
 
             lblSubtotal.Text = $"Subtotal: ${_subtotal:N2}";
-            lblPayable.Text = $"${_totalAmount:N2}";
+            lblPayable.Text = _totalAmount.ToString("C2", CultureInfo.GetCultureInfo("es-MX"));
 
             if (rbCash != null && rbCash.Checked && TryParseMoney(txtReceived.Text, out decimal received) && received == previous)
                 txtReceived.Text = _totalAmount.ToString("N2");
