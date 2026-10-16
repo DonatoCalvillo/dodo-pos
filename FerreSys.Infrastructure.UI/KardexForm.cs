@@ -112,6 +112,7 @@ public class KardexForm : Form
         cboKind.Items.Add(new KindFilterItem(StockMovementKind.AjusteAuditoria, "Ajuste de Auditoría"));
         cboKind.Items.Add(new KindFilterItem(StockMovementKind.CargaInicial, "Carga Inicial"));
         cboKind.Items.Add(new KindFilterItem(StockMovementKind.Devolucion, "Devolución"));
+        cboKind.Items.Add(new KindFilterItem(StockMovementKind.Compra, "Compra"));
         cboKind.SelectedIndex = 0;
 
         txtBarcode = new TextBox { Dock = DockStyle.Fill };

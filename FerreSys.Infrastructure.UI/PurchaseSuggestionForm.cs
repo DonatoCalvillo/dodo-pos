@@ -8,6 +8,7 @@ namespace FerreSys.Infrastructure.UI;
 public class PurchaseSuggestionForm : Form
 {
     private readonly GetReorderSuggestionsUseCase _getReorderSuggestionsUseCase;
+    private readonly Action<IWin32Window, IReadOnlyList<ReorderSuggestionLine>>? _createOrder;
 
     private DataGridView dgv = null!;
     private Label lblSummary = null!;
@@ -18,9 +19,12 @@ public class PurchaseSuggestionForm : Form
 
     private ReorderSuggestionsSummary _summary = new([]);
 
-    public PurchaseSuggestionForm(GetReorderSuggestionsUseCase getReorderSuggestionsUseCase)
+    public PurchaseSuggestionForm(
+        GetReorderSuggestionsUseCase getReorderSuggestionsUseCase,
+        Action<IWin32Window, IReadOnlyList<ReorderSuggestionLine>>? createOrder = null)
     {
         _getReorderSuggestionsUseCase = getReorderSuggestionsUseCase;
+        _createOrder = createOrder;
         InitializeComponent();
         LoadData();
     }
@@ -153,6 +157,13 @@ public class PurchaseSuggestionForm : Form
 
         btnRefresh = CreateButton("Actualizar", false);
         btnRefresh.Click += (_, _) => LoadData();
+
+        if (_createOrder != null)
+        {
+            var btnCreate = CreateButton("Crear orden de compra", true);
+            btnCreate.Click += (_, _) => _createOrder(this, _summary.Lines);
+            panel.Controls.Add(btnCreate);
+        }
 
         panel.Controls.AddRange([btnClose, btnPrintPdf, btnExportCsv, btnRefresh]);
         return panel;

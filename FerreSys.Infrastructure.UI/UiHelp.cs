@@ -275,7 +275,7 @@ internal static class SectionHelpText
         "Listado de productos agotados o por debajo del stock mínimo.\n\n" +
         "• A pedir = Stock deseado − Stock actual (mínimo 0).\n" +
         "• Rojo: agotado. Amarillo: bajo el mínimo.\n" +
-        "• Exporta a CSV o imprime / Guarda como PDF desde Windows.\n\n" +
+        "• Exporta a CSV, imprime o crea una orden de compra con estos faltantes.\n\n" +
         "Configura mínimo y deseado al registrar o editar cada producto.";
 
     public const string PurchaseSuggestionList =

@@ -306,6 +306,9 @@ public class Product
     private static decimal RoundMoney(decimal value) =>
         decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 
+    public static void EnsureQuantity(decimal quantity, UnitOfMeasure unit, bool allowZero) =>
+        ValidateQuantityForUnit(quantity, unit, allowZero);
+
     private static void ValidateQuantityForUnit(decimal quantity, UnitOfMeasure unit, bool allowZero)
     {
         if (!allowZero && quantity <= 0)

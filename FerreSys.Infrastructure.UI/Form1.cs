@@ -58,6 +58,8 @@ public partial class Form1 : Form
     private ToolStripMenuItem mnuSuggestionProducts = null!;
     private ToolStripMenuItem mnuInventory = null!;
     private ToolStripMenuItem mnuKardex = null!;
+    private ToolStripMenuItem mnuSuppliers = null!;
+    private ToolStripMenuItem mnuPurchaseOrders = null!;
     private ToolStripMenuItem mnuHideInventory = null!;
     private ToolStripMenuItem mnuSale = null!;
     private ToolStripMenuItem mnuEditProduct = null!;
@@ -104,6 +106,8 @@ public partial class Form1 : Form
     private readonly string[] _startupArgs;
     private readonly SqliteAppSettingsStore _appSettings;
     private readonly SqliteLoyaltyRepository _loyalty;
+    private readonly SqliteSupplierRepository _suppliers;
+    private readonly SqlitePurchaseOrderRepository _purchaseOrders;
     private readonly CloudBackupService _cloudBackup;
     private readonly LocalBackupService _localBackup;
     private readonly System.Windows.Forms.Timer _backupTimer;
@@ -124,6 +128,8 @@ public partial class Form1 : Form
         _productRepository = new SqliteProductRepository(_dbContext);
         _appSettings = new SqliteAppSettingsStore(_dbContext);
         _loyalty = new SqliteLoyaltyRepository(_dbContext);
+        _suppliers = new SqliteSupplierRepository(_dbContext);
+        _purchaseOrders = new SqlitePurchaseOrderRepository(_dbContext);
         _subscriptionService = subscription;
         _addProductUseCase = new AddProductUseCase(_productRepository, _subscriptionService);
         _searchProductsUseCase = new SearchProductsUseCase(_productRepository);
@@ -313,6 +319,8 @@ public partial class Form1 : Form
         // 3. Catálogo Dropdown
         mnuRegisterProduct = new ToolStripMenuItem("Registrar nuevo producto...", UiIcons.AddProduct(18), BtnOpenAddProduct_Click);
         mnuSuggestion = new ToolStripMenuItem("Sugerido de compra (Faltantes)...", UiIcons.Reorder(18), (_, _) => OpenPurchaseSuggestion());
+        mnuSuppliers = new ToolStripMenuItem("Proveedores...", UiIcons.Business(18), (_, _) => OpenSuppliers());
+        mnuPurchaseOrders = new ToolStripMenuItem("Órdenes de compra...", UiIcons.Sales(18), (_, _) => OpenPurchaseOrders());
         mnuSuggestionProducts = mnuSuggestion;
         mnuKardex = new ToolStripMenuItem("Kárdex de movimientos...", UiIcons.Kardex(18), (_, _) => OpenKardex());
         mnuImport = new ToolStripMenuItem("Importar catálogo (CSV)...", UiIcons.Import(18), BtnImportExcel_Click);
@@ -321,6 +329,8 @@ public partial class Form1 : Form
         _ddCatalog = CreateHeaderDropDown("Catálogo", UiIcons.AddProduct(20), [
             mnuRegisterProduct,
             mnuSuggestion,
+            mnuSuppliers,
+            mnuPurchaseOrders,
             mnuKardex,
             mnuImport,
             new ToolStripSeparator(),
@@ -1179,8 +1189,68 @@ public partial class Form1 : Form
         if (!Allow(UserPermission.Reports))
             return;
 
-        using var f = new PurchaseSuggestionForm(_getReorderSuggestionsUseCase);
+        using var f = new PurchaseSuggestionForm(
+            _getReorderSuggestionsUseCase,
+            _currentUser.Has(UserPermission.Products)
+                ? (owner, lines) => OpenPurchaseOrderEditor(null, lines, owner)
+                : null);
         f.ShowDialog(this);
+        RefreshStockAlerts();
+        RefreshSearchIfActive();
+    }
+
+    private void OpenSuppliers()
+    {
+        if (!Allow(UserPermission.Products))
+            return;
+
+        using var form = new SuppliersForm(_suppliers);
+        form.ShowDialog(this);
+    }
+
+    private void OpenPurchaseOrders()
+    {
+        if (!Allow(UserPermission.Products))
+            return;
+
+        using var form = new PurchaseOrdersForm(
+            _suppliers,
+            _productRepository,
+            _purchaseOrders,
+            _getReorderSuggestionsUseCase,
+            _appSettings,
+            _currentUser.DisplayName);
+        form.ShowDialog(this);
+        RefreshStockAlerts();
+        RefreshSearchIfActive();
+    }
+
+    private void OpenPurchaseOrderEditor(
+        PurchaseOrder? order,
+        IReadOnlyList<ReorderSuggestionLine> lines,
+        IWin32Window owner)
+    {
+        if (!Allow(UserPermission.Products))
+            return;
+
+        var seeds = lines
+            .Select(line => new PurchaseOrderSeedLine
+            {
+                Barcode = line.Barcode,
+                Quantity = line.SuggestedOrderQty > 0 ? line.SuggestedOrderQty : 1
+            })
+            .ToList();
+
+        using var editor = new PurchaseOrderEditorForm(
+            order,
+            seeds,
+            _suppliers,
+            _productRepository,
+            _purchaseOrders,
+            _getReorderSuggestionsUseCase,
+            _appSettings,
+            _currentUser.DisplayName);
+        editor.ShowDialog(owner);
         RefreshStockAlerts();
         RefreshSearchIfActive();
     }
@@ -1454,6 +1524,8 @@ public partial class Form1 : Form
         mnuSuggestion.Visible = reports;
         mnuSuggestionProducts.Visible = reports;
         btnPurchaseSuggestion.Visible = reports;
+        mnuSuppliers.Visible = products;
+        mnuPurchaseOrders.Visible = products;
         mnuCashX.Visible = cash;
         btnCashCloseX.Visible = cash;
         mnuCashZ.Visible = cash;

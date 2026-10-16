@@ -5,7 +5,8 @@ public enum StockMovementKind
     Venta,
     AjusteAuditoria,
     CargaInicial,
-    Devolucion
+    Devolucion,
+    Compra
 }
 
 public class StockMovement
@@ -68,6 +69,7 @@ public class StockMovement
         StockMovementKind.AjusteAuditoria => "AJUSTE_AUDITORIA",
         StockMovementKind.CargaInicial => "CARGA_INICIAL",
         StockMovementKind.Devolucion => "DEVOLUCION",
+        StockMovementKind.Compra => "COMPRA",
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 
@@ -77,6 +79,7 @@ public class StockMovement
         StockMovementKind.AjusteAuditoria => "Ajuste de Auditoría",
         StockMovementKind.CargaInicial => "Carga Inicial",
         StockMovementKind.Devolucion => "Devolución",
+        StockMovementKind.Compra => "Compra",
         _ => Kind.ToString()
     };
 
@@ -88,6 +91,7 @@ public class StockMovement
             "AJUSTE_AUDITORIA" => StockMovementKind.AjusteAuditoria,
             "CARGA_INICIAL" => StockMovementKind.CargaInicial,
             "DEVOLUCION" => StockMovementKind.Devolucion,
+            "COMPRA" => StockMovementKind.Compra,
             _ => throw new ArgumentException("Tipo de movimiento de inventario inválido.")
         };
     }

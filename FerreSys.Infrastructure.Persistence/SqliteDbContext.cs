@@ -257,6 +257,48 @@ public class SqliteDbContext
             IsActive INTEGER NOT NULL DEFAULT 1,
             Permissions INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS Suppliers (
+            Id TEXT PRIMARY KEY,
+            Name TEXT NOT NULL,
+            ContactName TEXT NOT NULL DEFAULT '',
+            Phone TEXT NOT NULL DEFAULT '',
+            Email TEXT NOT NULL DEFAULT '',
+            Address TEXT NOT NULL DEFAULT '',
+            Notes TEXT NOT NULL DEFAULT '',
+            IsActive INTEGER NOT NULL DEFAULT 1,
+            CreatedAt TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS PurchaseOrders (
+            Id TEXT PRIMARY KEY,
+            Number TEXT NOT NULL UNIQUE,
+            SupplierId TEXT NOT NULL,
+            Status TEXT NOT NULL,
+            CreatedAt TEXT NOT NULL,
+            SentAt TEXT,
+            DecidedAt TEXT,
+            Notes TEXT NOT NULL DEFAULT '',
+            CreatedBy TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY(SupplierId) REFERENCES Suppliers(Id)
+        );
+        CREATE INDEX IF NOT EXISTS IX_PurchaseOrders_Supplier ON PurchaseOrders(SupplierId);
+        CREATE INDEX IF NOT EXISTS IX_PurchaseOrders_CreatedAt ON PurchaseOrders(CreatedAt);
+
+        CREATE TABLE IF NOT EXISTS PurchaseOrderLines (
+            Id TEXT PRIMARY KEY,
+            PurchaseOrderId TEXT NOT NULL,
+            ProductId TEXT NOT NULL,
+            Barcode TEXT NOT NULL,
+            ProductName TEXT NOT NULL,
+            Unit TEXT NOT NULL,
+            OrderedQty REAL NOT NULL,
+            ReceivedQty REAL NOT NULL DEFAULT 0,
+            UnitCost REAL NOT NULL,
+            SortOrder INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(PurchaseOrderId) REFERENCES PurchaseOrders(Id)
+        );
+        CREATE INDEX IF NOT EXISTS IX_PurchaseOrderLines_Order ON PurchaseOrderLines(PurchaseOrderId);
     ";
 
         using var command = new SqliteCommand(createTablesQuery, connection);
