@@ -83,18 +83,18 @@ internal static class UiHelp
             Tag = HelpTag,
             Size = new Size(22, 22),
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(230, 240, 255),
-            ForeColor = UiTheme.GroupTitle,
-            Font = new Font("Tahoma", 8.25f, FontStyle.Bold),
+            BackColor = Color.FromArgb(241, 245, 249),
+            ForeColor = UiTheme.TextMuted,
+            Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
             Cursor = Cursors.Hand,
             TabStop = false,
             Margin = new Padding(0),
             Padding = new Padding(0),
             UseVisualStyleBackColor = false
         };
-        btn.FlatAppearance.BorderColor = Color.FromArgb(0, 90, 170);
+        btn.FlatAppearance.BorderColor = UiTheme.Border;
         btn.FlatAppearance.BorderSize = 1;
-        btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(200, 220, 250);
+        btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(224, 242, 254);
 
         var tip = new ToolTip
         {
@@ -119,8 +119,10 @@ internal static class UiHelp
 
     private static void Position(Control host, Control btn)
     {
-        int x = Math.Max(4, host.ClientSize.Width - btn.Width - 6);
-        int y = host is GroupBox ? 0 : 4;
+        int x = Math.Max(4, host.ClientSize.Width - btn.Width - 8);
+        int y = host is GroupBox
+            ? 0
+            : Math.Max(4, (host.ClientSize.Height - btn.Height) / 2);
         btn.Location = new Point(x, y);
     }
 }

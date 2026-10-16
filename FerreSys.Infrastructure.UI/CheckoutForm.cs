@@ -1,4 +1,6 @@
+using System.Drawing.Drawing2D;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using FerreSys.Application;
 using FerreSys.Domain;
 
@@ -24,6 +26,7 @@ public partial class CheckoutForm : Form
     private Label lblCardAmount = null!;
     private Label lblCashNeeded = null!;
     private TextBox txtReceived = null!;
+    private Panel _changeBanner = null!;
     private Label lblChangeCaption = null!;
     private Label lblChange = null!;
     private Label lblChangeBreakdown = null!;
@@ -48,29 +51,38 @@ public partial class CheckoutForm : Form
     private void InitializeComponent(decimal totalAmount)
     {
         Text = "Procesar Pago - Posly";
-        Size = new Size(520, 760);
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        ClientSize = new Size(640, 668);
+        FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = UiTheme.Ui;
         BackColor = UiTheme.WindowBg;
+        DoubleBuffered = true;
         KeyPreview = true;
         KeyDown += CheckoutForm_KeyDown;
+        Paint += (_, e) =>
+        {
+            using var pen = new Pen(Color.FromArgb(148, 163, 184), 1f);
+            e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        };
+
+        var header = CreateDialogHeader();
 
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 5,
-            Padding = new Padding(10, 8, 10, 10),
+            Padding = new Padding(16, 10, 16, 12),
             BackColor = UiTheme.WindowBg
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));  // 0: Dark Digital Total Visor
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 86f));  // 1: Ticket Discount Card
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 156f)); // 2: Payment Method Card
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // 3: Cash & Change Card (~220px)
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48f));  // 4: Confirm & Cancel CTA Row
 
         root.Controls.Add(CreateTotalSection(totalAmount), 0, 0);
         root.Controls.Add(CreateDiscountSection(), 0, 1);
@@ -78,11 +90,17 @@ public partial class CheckoutForm : Form
         root.Controls.Add(CreateCashSection(), 0, 3);
         root.Controls.Add(CreateActionsSection(), 0, 4);
 
+        Controls.Add(header);
         Controls.Add(root);
+        header.SendToBack();
+        root.BringToFront();
+
         txtReceived.Text = totalAmount.ToString("N2");
         UpdatePaymentState();
+
         Shown += (_, _) =>
         {
+            ApplyRoundedCorners();
             if (rbCash.Checked)
             {
                 txtReceived.Focus();
@@ -91,29 +109,120 @@ public partial class CheckoutForm : Form
         };
     }
 
-    private GroupBox CreateTotalSection(decimal totalAmount)
+    private Panel CreateDialogHeader()
     {
-        var gb = UiHelp.CreateGroupBox("Total a cobrar", SectionHelpText.CheckoutTotal);
+        var bar = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 44,
+            BackColor = UiTheme.HeaderBg,
+            Padding = new Padding(16, 0, 10, 0)
+        };
+        bar.MouseDown += OnDragMouseDown;
 
-        var stack = new TableLayoutPanel
+        var title = new Label
+        {
+            Text = "PROCESAR COBRO DE VENTA",
+            Dock = DockStyle.Left,
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold),
+            ForeColor = Color.White,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(0, 11, 0, 0)
+        };
+        title.MouseDown += OnDragMouseDown;
+
+        var btnClose = new Button
+        {
+            Text = "✕",
+            Dock = DockStyle.Right,
+            Width = 36,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = UiTheme.HeaderBg,
+            ForeColor = Color.FromArgb(148, 163, 184),
+            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            TabStop = false,
+            UseVisualStyleBackColor = false
+        };
+        btnClose.FlatAppearance.BorderSize = 0;
+        btnClose.FlatAppearance.MouseOverBackColor = Color.FromArgb(220, 38, 38);
+        btnClose.MouseEnter += (_, _) => btnClose.ForeColor = Color.White;
+        btnClose.MouseLeave += (_, _) => btnClose.ForeColor = Color.FromArgb(148, 163, 184);
+        btnClose.Click += (_, _) =>
+        {
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
+
+        var shortcutHint = new Label
+        {
+            Text = "F1 Efectivo  ·  F2 Tarjeta  ·  F3 Mixto  ·  Esc Cancelar  ",
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            Font = new Font("Segoe UI", 8.25f, FontStyle.Regular),
+            ForeColor = Color.FromArgb(148, 163, 184),
+            TextAlign = ContentAlignment.MiddleRight,
+            Padding = new Padding(0, 13, 6, 0)
+        };
+        shortcutHint.MouseDown += OnDragMouseDown;
+
+        bar.Controls.Add(shortcutHint);
+        bar.Controls.Add(btnClose);
+        bar.Controls.Add(title);
+        return bar;
+    }
+
+    private Panel CreateTotalSection(decimal totalAmount)
+    {
+        var visor = new Panel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            Padding = new Padding(8, 2, 8, 2),
-            BackColor = UiTheme.PanelBg
+            Margin = new Padding(0, 0, 0, 8),
+            Padding = new Padding(18, 8, 18, 8),
+            BackColor = UiTheme.HeaderBg
         };
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
-        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48f));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52f));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 20f));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        lblSubtotal = new Label
+        {
+            Text = $"Subtotal: ${_subtotal:N2}",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(203, 213, 225),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0)
+        };
 
         var lblCaption = new Label
         {
-            Text = "TOTAL",
+            Text = "TOTAL A COBRAR",
             Dock = DockStyle.Fill,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.Total,
-            BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(56, 189, 248),
+            TextAlign = ContentAlignment.MiddleRight,
+            Margin = new Padding(0)
+        };
+
+        lblTicketDiscount = new Label
+        {
+            Text = "Sin descuento de ticket",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+            ForeColor = Color.FromArgb(148, 163, 184),
+            TextAlign = ContentAlignment.MiddleLeft,
             Margin = new Padding(0)
         };
 
@@ -121,36 +230,46 @@ public partial class CheckoutForm : Form
         {
             Text = totalAmount.ToString("C2", CultureInfo.GetCultureInfo("es-MX")),
             Dock = DockStyle.Fill,
-            Font = UiTheme.TotalFont,
-            ForeColor = UiTheme.Total,
-            BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.MiddleCenter,
-            AutoEllipsis = false,
+            Font = new Font("Segoe UI", 22f, FontStyle.Bold),
+            ForeColor = Color.White,
+            TextAlign = ContentAlignment.MiddleRight,
+            AutoEllipsis = true,
             Margin = new Padding(0)
         };
 
-        stack.Controls.Add(lblCaption, 0, 0);
-        stack.Controls.Add(lblPayable, 0, 1);
-        gb.Controls.Add(stack);
-        return gb;
+        grid.Controls.Add(lblSubtotal, 0, 0);
+        grid.Controls.Add(lblCaption, 1, 0);
+        grid.Controls.Add(lblTicketDiscount, 0, 1);
+        grid.Controls.Add(lblPayable, 1, 1);
+
+        visor.Controls.Add(grid);
+        return visor;
     }
 
-    private GroupBox CreateDiscountSection()
+    private Panel CreateDiscountSection()
     {
-        var gb = UiHelp.CreateGroupBox("Descuento del ticket", SectionHelpText.CheckoutDiscount);
-        var grid = new TableLayoutPanel
+        var body = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 3,
-            Padding = new Padding(8, 6, 8, 4),
+            RowCount = 1,
+            Padding = new Padding(12, 8, 12, 8),
+            Margin = new Padding(0),
             BackColor = UiTheme.PanelBg
         };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
+        body.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-        cboTicketDiscount = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
-        cboTicketDiscount.Items.AddRange(["Ninguno", "Porcentaje", "Monto fijo"]);
+        cboTicketDiscount = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            Font = new Font("Segoe UI", 10f, FontStyle.Regular),
+            FlatStyle = FlatStyle.Standard,
+            Margin = new Padding(0, 0, 8, 0)
+        };
+        cboTicketDiscount.Items.AddRange(["Sin descuento", "Descuento en porcentaje (%)", "Descuento en monto fijo ($)"]);
         cboTicketDiscount.SelectedIndex = 0;
         cboTicketDiscount.SelectedIndexChanged += (_, _) => ApplyTicketDiscount();
 
@@ -158,34 +277,547 @@ public partial class CheckoutForm : Form
         {
             DecimalPlaces = 2,
             Maximum = 99999,
-            Dock = DockStyle.Fill,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            Font = new Font("Segoe UI", 10.5f, FontStyle.Regular),
+            TextAlign = HorizontalAlignment.Right,
+            Margin = new Padding(8, 0, 0, 0),
             Enabled = false
         };
         numTicketDiscount.ValueChanged += (_, _) => ApplyTicketDiscount();
 
-        lblSubtotal = new Label
+        body.Controls.Add(cboTicketDiscount, 0, 0);
+        body.Controls.Add(numTicketDiscount, 1, 0);
+
+        return CreateSectionCard("DESCUENTO DEL TICKET", "Descuento del ticket", SectionHelpText.CheckoutDiscount, body);
+    }
+
+    private Panel CreatePaymentSection()
+    {
+        var stack = new TableLayoutPanel
         {
-            Text = $"Subtotal: ${_subtotal:N2}",
             Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = UiTheme.Text
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(12, 8, 12, 8),
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
         };
-        lblTicketDiscount = new Label
+        stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));
+        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        // Row 0: 3 Segmented Method Tiles
+        var methods = new TableLayoutPanel
         {
-            Text = "Sin descuento de ticket",
             Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = UiTheme.Text
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0, 0, 0, 4),
+            BackColor = UiTheme.PanelBg
+        };
+        methods.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
+        methods.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
+        methods.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34f));
+        methods.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        rbCash = CreateMethodTile("Efectivo (F1)", isChecked: true, new Padding(0, 0, 4, 0));
+        rbCard = CreateMethodTile("Tarjeta (F2)", isChecked: false, new Padding(4, 0, 4, 0));
+        rbMixed = CreateMethodTile("Mixto (F3)", isChecked: false, new Padding(4, 0, 0, 0));
+
+        rbCash.CheckedChanged += (_, _) =>
+        {
+            StyleMethodTile(rbCash);
+            UpdatePaymentState();
+        };
+        rbCard.CheckedChanged += (_, _) =>
+        {
+            StyleMethodTile(rbCard);
+            UpdatePaymentState();
+        };
+        rbMixed.CheckedChanged += (_, _) =>
+        {
+            StyleMethodTile(rbMixed);
+            UpdatePaymentState();
         };
 
-        grid.Controls.Add(cboTicketDiscount, 0, 0);
-        grid.Controls.Add(numTicketDiscount, 1, 0);
-        grid.Controls.Add(lblSubtotal, 0, 1);
-        grid.SetColumnSpan(lblSubtotal, 2);
-        grid.Controls.Add(lblTicketDiscount, 0, 2);
-        grid.SetColumnSpan(lblTicketDiscount, 2);
-        gb.Controls.Add(grid);
-        return gb;
+        methods.Controls.Add(rbCash, 0, 0);
+        methods.Controls.Add(rbCard, 1, 0);
+        methods.Controls.Add(rbMixed, 2, 0);
+
+        // Row 1: Side-by-side Card Amount & Card Reference (with proper height so text is never clipped)
+        var cardFieldsGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = new Padding(0, 2, 0, 0),
+            BackColor = UiTheme.PanelBg
+        };
+        cardFieldsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42f));
+        cardFieldsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58f));
+        cardFieldsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        cardFieldsGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        lblCardAmount = new Label
+        {
+            Text = "Monto a cobrar en tarjeta:",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
+            ForeColor = UiTheme.Text,
+            TextAlign = ContentAlignment.BottomLeft,
+            Margin = new Padding(0, 0, 6, 2)
+        };
+
+        lblRef = new Label
+        {
+            Text = "Últimos 4 dígitos o folio terminal:",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
+            ForeColor = UiTheme.Text,
+            TextAlign = ContentAlignment.BottomLeft,
+            Margin = new Padding(6, 0, 0, 2)
+        };
+
+        txtCardAmount = new TextBox
+        {
+            BorderStyle = BorderStyle.None,
+            Font = new Font("Segoe UI Semibold", 11f, FontStyle.Bold),
+            ForeColor = UiTheme.Text,
+            TextAlign = HorizontalAlignment.Right,
+            PlaceholderText = "0.00"
+        };
+        txtCardAmount.TextChanged += (_, _) => RefreshChange();
+
+        txtCardRef = new TextBox
+        {
+            BorderStyle = BorderStyle.None,
+            Font = new Font("Segoe UI", 10.5f, FontStyle.Regular),
+            ForeColor = UiTheme.Text,
+            MaxLength = 10,
+            PlaceholderText = "Ej. 1234 o folio de voucher"
+        };
+
+        cardFieldsGrid.Controls.Add(lblCardAmount, 0, 0);
+        cardFieldsGrid.Controls.Add(lblRef, 1, 0);
+        cardFieldsGrid.Controls.Add(WrapTextBox(txtCardAmount, new Padding(0, 2, 6, 2)), 0, 1);
+        cardFieldsGrid.Controls.Add(WrapTextBox(txtCardRef, new Padding(6, 2, 0, 2)), 1, 1);
+
+        stack.Controls.Add(methods, 0, 0);
+        stack.Controls.Add(cardFieldsGrid, 0, 1);
+
+        return CreateSectionCard("MÉTODO DE PAGO", "Método de pago", SectionHelpText.CheckoutPayment, stack);
+    }
+
+    private Panel CreateCashSection()
+    {
+        var stack = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Padding = new Padding(12, 8, 12, 10),
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
+        };
+        stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f)); // Row 0: Cash needed + Customer pays with
+        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f)); // Row 1: 7 Quick Bill Buttons
+        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Row 2: Change Visor Box
+
+        // Row 0: Left = Efectivo a cubrir + Right = El cliente paga con [Input]
+        var topCashRow = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0, 0, 0, 4),
+            BackColor = UiTheme.PanelBg
+        };
+        topCashRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48f));
+        topCashRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52f));
+        topCashRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        lblCashNeeded = new Label
+        {
+            Text = "Efectivo a cubrir: $0.00",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold),
+            ForeColor = UiTheme.Text,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0)
+        };
+
+        var payBox = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        payBox.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80f));
+        payBox.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        payBox.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        var lblPay = new Label
+        {
+            Text = "Paga con:",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
+            ForeColor = UiTheme.TextMuted,
+            TextAlign = ContentAlignment.MiddleRight,
+            Margin = new Padding(0, 0, 6, 0)
+        };
+
+        txtReceived = new TextBox
+        {
+            BorderStyle = BorderStyle.None,
+            Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+            ForeColor = UiTheme.GroupTitle,
+            TextAlign = HorizontalAlignment.Right
+        };
+        txtReceived.TextChanged += (_, _) => RefreshChange();
+        txtReceived.Enter += (_, _) => txtReceived.SelectAll();
+
+        payBox.Controls.Add(lblPay, 0, 0);
+        payBox.Controls.Add(WrapTextBox(txtReceived, new Padding(0, 1, 0, 1)), 1, 0);
+
+        topCashRow.Controls.Add(lblCashNeeded, 0, 0);
+        topCashRow.Controls.Add(payBox, 1, 0);
+
+        // Row 1: 7 Evenly-Spaced Bill Buttons
+        var billsGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 7,
+            RowCount = 1,
+            Margin = new Padding(0, 0, 0, 6),
+            BackColor = UiTheme.PanelBg
+        };
+        for (int i = 0; i < 7; i++)
+            billsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 7f));
+        billsGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        billsGrid.Controls.Add(CreateBillButton("Exacto", null, isFirst: true), 0, 0);
+        for (int i = 0; i < Bills.Length; i++)
+        {
+            decimal bill = Bills[i];
+            billsGrid.Controls.Add(CreateBillButton($"${bill:0}", bill, isFirst: false), i + 1, 0);
+        }
+
+        // Row 2: Dedicated Change Display Banner (Zero overlap between $0.00 and breakdown!)
+        _changeBanner = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 0),
+            Padding = new Padding(16, 8, 16, 8),
+            BackColor = Color.FromArgb(240, 253, 244)
+        };
+        _changeBanner.Paint += (s, e) =>
+        {
+            if (s is not Control c) return;
+            using var pen = new Pen(Color.FromArgb(187, 247, 208), 1f);
+            e.Graphics.DrawRectangle(pen, 0, 0, c.Width - 1, c.Height - 1);
+        };
+
+        var changeLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        changeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58f));
+        changeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42f));
+        changeLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        changeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        lblChangeCaption = new Label
+        {
+            Text = "CAMBIO A ENTREGAR",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            ForeColor = UiTheme.StatusOk,
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.BottomLeft,
+            Margin = new Padding(0)
+        };
+
+        lblChangeBreakdown = new Label
+        {
+            Text = "Sin cambio",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+            ForeColor = UiTheme.TextMuted,
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.TopLeft,
+            Margin = new Padding(0, 2, 0, 0)
+        };
+
+        lblChange = new Label
+        {
+            Text = "$0.00",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 22f, FontStyle.Bold),
+            ForeColor = UiTheme.StatusOk,
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleRight,
+            AutoEllipsis = true,
+            Margin = new Padding(0)
+        };
+
+        changeLayout.Controls.Add(lblChangeCaption, 0, 0);
+        changeLayout.Controls.Add(lblChangeBreakdown, 0, 1);
+        changeLayout.Controls.Add(lblChange, 1, 0);
+        changeLayout.SetRowSpan(lblChange, 2);
+
+        _changeBanner.Controls.Add(changeLayout);
+
+        stack.Controls.Add(topCashRow, 0, 0);
+        stack.Controls.Add(billsGrid, 0, 1);
+        stack.Controls.Add(_changeBanner, 0, 2);
+
+        return CreateSectionCard("COBRO EN EFECTIVO Y CAMBIO", "Cobro con cambio", SectionHelpText.CheckoutCash, stack);
+    }
+
+    private RadioButton CreateMethodTile(string text, bool isChecked, Padding margin)
+    {
+        var rb = new RadioButton
+        {
+            Text = text,
+            Appearance = Appearance.Button,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold),
+            Checked = isChecked,
+            Cursor = Cursors.Hand,
+            Margin = margin,
+            UseVisualStyleBackColor = false
+        };
+        rb.FlatAppearance.BorderSize = 1;
+        StyleMethodTile(rb);
+        return rb;
+    }
+
+    private static void StyleMethodTile(RadioButton rb)
+    {
+        if (rb.Checked)
+        {
+            rb.BackColor = Color.FromArgb(224, 242, 254);
+            rb.ForeColor = Color.FromArgb(3, 105, 161);
+            rb.FlatAppearance.BorderColor = UiTheme.BrandPrimary;
+            rb.FlatAppearance.CheckedBackColor = Color.FromArgb(224, 242, 254);
+            rb.FlatAppearance.MouseOverBackColor = Color.FromArgb(186, 230, 253);
+        }
+        else
+        {
+            rb.BackColor = Color.FromArgb(248, 250, 252);
+            rb.ForeColor = UiTheme.TextMuted;
+            rb.FlatAppearance.BorderColor = UiTheme.Border;
+            rb.FlatAppearance.MouseOverBackColor = Color.FromArgb(241, 245, 249);
+        }
+    }
+
+    private static Panel WrapTextBox(TextBox textBox, Padding margin)
+    {
+        var box = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = margin,
+            BackColor = Color.White,
+            Cursor = Cursors.IBeam
+        };
+        box.Click += (_, _) => textBox.Focus();
+        textBox.GotFocus += (_, _) => box.Invalidate();
+        textBox.LostFocus += (_, _) => box.Invalidate();
+        textBox.EnabledChanged += (_, _) =>
+        {
+            Color bg = textBox.Enabled ? Color.White : Color.FromArgb(241, 245, 249);
+            box.BackColor = bg;
+            textBox.BackColor = bg;
+            box.Invalidate();
+        };
+
+        void LayoutInnerTextBox()
+        {
+            int th = textBox.PreferredHeight;
+            int w = Math.Max(20, box.ClientSize.Width - 16);
+            int top = Math.Max(2, (box.ClientSize.Height - th) / 2);
+            textBox.SetBounds(8, top, w, th);
+        }
+        box.Resize += (_, _) => LayoutInnerTextBox();
+        box.HandleCreated += (_, _) => LayoutInnerTextBox();
+
+        box.Paint += (s, e) =>
+        {
+            if (s is not Control c) return;
+            Color borderColor = !textBox.Enabled
+                ? Color.FromArgb(226, 232, 240)
+                : textBox.Focused
+                    ? UiTheme.BrandPrimary
+                    : Color.FromArgb(203, 213, 225);
+            float width = textBox.Focused ? 1.8f : 1f;
+            using var pen = new Pen(borderColor, width);
+            e.Graphics.DrawRectangle(pen, 0, 0, c.Width - 1, c.Height - 1);
+        };
+        box.Controls.Add(textBox);
+        return box;
+    }
+
+    private Button CreateBillButton(string text, decimal? amount, bool isFirst)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(isFirst ? 0 : 3, 0, 3, 0),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(241, 245, 249),
+            ForeColor = UiTheme.Text,
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            UseVisualStyleBackColor = false,
+            Tag = amount
+        };
+        button.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
+        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(224, 242, 254);
+        button.Click += (_, _) =>
+        {
+            decimal value = amount ?? GetCashNeeded();
+            txtReceived.Text = value.ToString("N2");
+            txtReceived.Focus();
+            txtReceived.SelectAll();
+        };
+        _billButtons.Add(button);
+        return button;
+    }
+
+    private Panel CreateActionsSection()
+    {
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = UiTheme.WindowBg,
+            Margin = new Padding(0),
+            Padding = new Padding(0, 2, 0, 0)
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28f));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 72f));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        var btnCancel = new Button
+        {
+            Text = "Cancelar (Esc)",
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.White,
+            ForeColor = UiTheme.TextMuted,
+            Font = UiTheme.UiBold,
+            Cursor = Cursors.Hand,
+            Margin = new Padding(0, 0, 8, 0),
+            UseVisualStyleBackColor = false
+        };
+        btnCancel.FlatAppearance.BorderColor = UiTheme.Border;
+        btnCancel.FlatAppearance.BorderSize = 1;
+        btnCancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(241, 245, 249);
+        btnCancel.Click += (_, _) =>
+        {
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
+
+        btnConfirm = new Button
+        {
+            Text = "  Confirmar y emitir ticket (Enter)",
+            Image = UiIcons.Checkout(22),
+            ImageAlign = ContentAlignment.MiddleLeft,
+            TextAlign = ContentAlignment.MiddleCenter,
+            TextImageRelation = TextImageRelation.ImageBeforeText,
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = UiTheme.CheckoutGreen,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 11.5f, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            Margin = new Padding(0),
+            Padding = new Padding(12, 0, 12, 0),
+            UseVisualStyleBackColor = false
+        };
+        btnConfirm.FlatAppearance.BorderSize = 0;
+        btnConfirm.FlatAppearance.MouseOverBackColor = UiTheme.CheckoutGreenHover;
+        btnConfirm.Click += BtnConfirm_Click;
+
+        grid.Controls.Add(btnCancel, 0, 0);
+        grid.Controls.Add(btnConfirm, 1, 0);
+        return grid;
+    }
+
+    private static Panel CreateSectionCard(string title, string helpTitle, string helpText, Control body)
+    {
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 8),
+            Padding = new Padding(1),
+            BackColor = UiTheme.PanelBg
+        };
+        card.Paint += (s, e) =>
+        {
+            if (s is not Control c) return;
+            using var pen = new Pen(UiTheme.Border, 1f);
+            e.Graphics.DrawRectangle(pen, 0, 0, c.Width - 1, c.Height - 1);
+        };
+
+        var cardGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
+        };
+        cardGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        cardGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f));
+        cardGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        var header = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            Padding = new Padding(12, 0, 34, 0),
+            BackColor = Color.FromArgb(248, 250, 252)
+        };
+        header.Paint += (s, e) =>
+        {
+            if (s is not Control c) return;
+            using var accent = new SolidBrush(UiTheme.BrandPrimary);
+            e.Graphics.FillRectangle(accent, 0, 5, 3, c.Height - 10);
+            using var line = new Pen(UiTheme.Border, 1f);
+            e.Graphics.DrawLine(line, 0, c.Height - 1, c.Width, c.Height - 1);
+        };
+
+        var lbl = new Label
+        {
+            Text = title,
+            Dock = DockStyle.Left,
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 8.25f, FontStyle.Bold),
+            ForeColor = UiTheme.GroupTitle,
+            Padding = new Padding(0, 5, 0, 0)
+        };
+        header.Controls.Add(lbl);
+        UiHelp.Attach(header, helpTitle, helpText);
+
+        body.Dock = DockStyle.Fill;
+        cardGrid.Controls.Add(header, 0, 0);
+        cardGrid.Controls.Add(body, 0, 1);
+        card.Controls.Add(cardGrid);
+        return card;
     }
 
     private void ApplyTicketDiscount()
@@ -221,13 +853,13 @@ public partial class CheckoutForm : Form
             {
                 _totalAmount = _subtotal;
                 lblTicketDiscount.Text = "El descuento debe ser menor al subtotal.";
-                lblTicketDiscount.ForeColor = UiTheme.StatusDanger;
+                lblTicketDiscount.ForeColor = Color.FromArgb(248, 113, 113);
             }
             else
             {
                 _totalAmount = _subtotal - raw;
-                lblTicketDiscount.Text = raw > 0m ? $"Descuento: ${raw:N2}" : "Sin descuento de ticket";
-                lblTicketDiscount.ForeColor = UiTheme.Text;
+                lblTicketDiscount.Text = raw > 0m ? $"Descuento aplicado: -${raw:N2}" : "Sin descuento de ticket";
+                lblTicketDiscount.ForeColor = raw > 0m ? Color.FromArgb(74, 222, 128) : Color.FromArgb(148, 163, 184);
             }
 
             lblSubtotal.Text = $"Subtotal: ${_subtotal:N2}";
@@ -276,304 +908,6 @@ public partial class CheckoutForm : Form
         return true;
     }
 
-    private GroupBox CreatePaymentSection()
-    {
-        var gb = UiHelp.CreateGroupBox("Método de pago", SectionHelpText.CheckoutPayment);
-
-        var stack = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 4,
-            Padding = new Padding(8, 14, 8, 6),
-            BackColor = UiTheme.PanelBg
-        };
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-
-        var methods = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 1,
-            Margin = new Padding(0),
-            BackColor = UiTheme.PanelBg
-        };
-        methods.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
-        methods.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
-        methods.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34f));
-
-        rbCash = new RadioButton
-        {
-            Text = "Efectivo (F1)",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.Text,
-            Checked = true,
-            Margin = new Padding(0)
-        };
-        rbCard = new RadioButton
-        {
-            Text = "Tarjeta (F2)",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.Text,
-            Margin = new Padding(0)
-        };
-        rbMixed = new RadioButton
-        {
-            Text = "Mixto (F3)",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.Text,
-            Margin = new Padding(0)
-        };
-        rbCash.CheckedChanged += (_, _) => UpdatePaymentState();
-        rbCard.CheckedChanged += (_, _) => UpdatePaymentState();
-        rbMixed.CheckedChanged += (_, _) => UpdatePaymentState();
-
-        methods.Controls.Add(rbCash, 0, 0);
-        methods.Controls.Add(rbCard, 1, 0);
-        methods.Controls.Add(rbMixed, 2, 0);
-
-        lblCardAmount = new Label
-        {
-            Text = "Monto tarjeta:",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Ui,
-            ForeColor = UiTheme.Text,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0)
-        };
-
-        txtCardAmount = new TextBox
-        {
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Search,
-            ForeColor = UiTheme.Text,
-            TextAlign = HorizontalAlignment.Right,
-            Margin = new Padding(0, 2, 0, 0)
-        };
-        txtCardAmount.TextChanged += (_, _) => RefreshChange();
-
-        var cardAmountRow = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
-            Margin = new Padding(0),
-            BackColor = UiTheme.PanelBg
-        };
-        cardAmountRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        cardAmountRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        cardAmountRow.Controls.Add(lblCardAmount, 0, 0);
-        cardAmountRow.Controls.Add(txtCardAmount, 1, 0);
-
-        lblRef = new Label
-        {
-            Text = "Últimos 4 dígitos / Folio terminal:",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Ui,
-            ForeColor = UiTheme.Text,
-            TextAlign = ContentAlignment.BottomLeft,
-            Margin = new Padding(0, 2, 0, 0)
-        };
-
-        txtCardRef = new TextBox
-        {
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Search,
-            ForeColor = UiTheme.Text,
-            MaxLength = 10,
-            Margin = new Padding(0, 2, 0, 0),
-            PlaceholderText = "Ej. 1234 o folio de terminal"
-        };
-
-        stack.Controls.Add(methods, 0, 0);
-        stack.Controls.Add(cardAmountRow, 0, 1);
-        stack.Controls.Add(lblRef, 0, 2);
-        stack.Controls.Add(txtCardRef, 0, 3);
-
-        gb.Controls.Add(stack);
-        return gb;
-    }
-
-    private GroupBox CreateCashSection()
-    {
-        var gb = UiHelp.CreateGroupBox("Cobro con cambio", SectionHelpText.CheckoutCash);
-
-        var stack = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 5,
-            Padding = new Padding(8, 14, 8, 6),
-            BackColor = UiTheme.PanelBg
-        };
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        stack.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        lblCashNeeded = new Label
-        {
-            Text = "Efectivo a cubrir: —",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.Text,
-            TextAlign = ContentAlignment.BottomLeft,
-            Margin = new Padding(0)
-        };
-
-        var lblPay = new Label
-        {
-            Text = "El cliente paga con:",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Ui,
-            ForeColor = UiTheme.Text,
-            TextAlign = ContentAlignment.BottomLeft,
-            Margin = new Padding(0)
-        };
-
-        txtReceived = new TextBox
-        {
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Search,
-            ForeColor = UiTheme.Text,
-            TextAlign = HorizontalAlignment.Right,
-            Margin = new Padding(0, 2, 0, 0)
-        };
-        txtReceived.TextChanged += (_, _) => RefreshChange();
-        txtReceived.Enter += (_, _) => txtReceived.SelectAll();
-
-        var bills = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Margin = new Padding(0, 4, 0, 0),
-            BackColor = UiTheme.PanelBg,
-            Padding = new Padding(0)
-        };
-
-        bills.Controls.Add(CreateBillButton("Exacto", null));
-        foreach (decimal bill in Bills)
-            bills.Controls.Add(CreateBillButton($"${bill:0}", bill));
-
-        var changePanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            Margin = new Padding(0, 2, 0, 0),
-            BackColor = UiTheme.PanelBg
-        };
-        changePanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 16));
-        changePanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-        changePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        lblChangeCaption = new Label
-        {
-            Text = "CAMBIO",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.StatusOk,
-            BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.BottomCenter,
-            Margin = new Padding(0)
-        };
-
-        lblChange = new Label
-        {
-            Text = "$0.00",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.TotalFont,
-            ForeColor = UiTheme.StatusOk,
-            BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.TopCenter,
-            Margin = new Padding(0)
-        };
-
-        lblChangeBreakdown = new Label
-        {
-            Text = string.Empty,
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Ui,
-            ForeColor = UiTheme.Text,
-            BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.TopCenter,
-            Margin = new Padding(0)
-        };
-
-        changePanel.Controls.Add(lblChangeCaption, 0, 0);
-        changePanel.Controls.Add(lblChange, 0, 1);
-        changePanel.Controls.Add(lblChangeBreakdown, 0, 2);
-
-        stack.Controls.Add(lblCashNeeded, 0, 0);
-        stack.Controls.Add(lblPay, 0, 1);
-        stack.Controls.Add(txtReceived, 0, 2);
-        stack.Controls.Add(bills, 0, 3);
-        stack.Controls.Add(changePanel, 0, 4);
-        gb.Controls.Add(stack);
-        return gb;
-    }
-
-    private Button CreateBillButton(string text, decimal? amount)
-    {
-        var button = new Button
-        {
-            Text = text,
-            Width = 58,
-            Height = 28,
-            Margin = new Padding(0, 0, 4, 0),
-            FlatStyle = FlatStyle.Standard,
-            UseVisualStyleBackColor = true,
-            Font = UiTheme.Ui,
-            Tag = amount
-        };
-        button.Click += (_, _) =>
-        {
-            decimal value = amount ?? GetCashNeeded();
-            txtReceived.Text = value.ToString("N2");
-            txtReceived.Focus();
-            txtReceived.SelectAll();
-        };
-        _billButtons.Add(button);
-        return button;
-    }
-
-    private Panel CreateActionsSection()
-    {
-        var panel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = UiTheme.WindowBg,
-            Padding = new Padding(0, 6, 0, 0)
-        };
-
-        btnConfirm = new Button
-        {
-            Text = "  Confirmar y emitir ticket (Enter)",
-            Image = UiIcons.Checkout(),
-            ImageAlign = ContentAlignment.MiddleLeft,
-            TextAlign = ContentAlignment.MiddleLeft,
-            TextImageRelation = TextImageRelation.ImageBeforeText,
-            Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Standard,
-            UseVisualStyleBackColor = true,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.Text,
-            Padding = new Padding(10, 0, 10, 0)
-        };
-        btnConfirm.Click += BtnConfirm_Click;
-
-        panel.Controls.Add(btnConfirm);
-        return panel;
-    }
-
     private bool UsesCard => rbCard.Checked || rbMixed.Checked;
     private bool UsesCash => rbCash.Checked || rbMixed.Checked;
 
@@ -599,10 +933,10 @@ public partial class CheckoutForm : Form
         bool cash = rbCash.Checked;
 
         txtCardRef.Enabled = UsesCard;
-        lblRef.ForeColor = UsesCard ? UiTheme.Text : Color.DimGray;
+        lblRef.ForeColor = UsesCard ? UiTheme.Text : UiTheme.TextMuted;
 
         txtCardAmount.Enabled = mixed;
-        lblCardAmount.ForeColor = mixed ? UiTheme.Text : Color.DimGray;
+        lblCardAmount.ForeColor = mixed ? UiTheme.Text : UiTheme.TextMuted;
         if (!mixed)
             txtCardAmount.Clear();
         else if (string.IsNullOrWhiteSpace(txtCardAmount.Text))
@@ -616,11 +950,12 @@ public partial class CheckoutForm : Form
         {
             txtCardRef.Focus();
             lblCashNeeded.Text = "Efectivo a cubrir: $0.00";
-            lblChangeCaption.Text = "TARJETA";
-            lblChangeCaption.ForeColor = UiTheme.Text;
+            _changeBanner.BackColor = Color.FromArgb(248, 250, 252);
+            lblChangeCaption.Text = "COBRO CON TARJETA";
+            lblChangeCaption.ForeColor = UiTheme.BrandPrimary;
             lblChange.Text = "Sin cambio";
             lblChange.ForeColor = UiTheme.Text;
-            lblChangeBreakdown.Text = string.Empty;
+            lblChangeBreakdown.Text = "Capturar referencia o últimos 4 dígitos";
             return;
         }
 
@@ -675,26 +1010,28 @@ public partial class CheckoutForm : Form
         decimal difference = decimal.Round(received - cashNeeded, 2, MidpointRounding.AwayFromZero);
         if (difference < 0)
         {
-            SetChangeError("FALTA", $"${Math.Abs(difference):N2}");
-            lblChangeBreakdown.Text = string.Empty;
+            SetChangeError("FALTA POR CUBRIR", $"${Math.Abs(difference):N2}");
+            lblChangeBreakdown.Text = "Monto insuficiente en efectivo";
             return;
         }
 
-        lblChangeCaption.Text = "CAMBIO";
+        _changeBanner.BackColor = Color.FromArgb(240, 253, 244);
+        lblChangeCaption.Text = "CAMBIO A ENTREGAR";
         lblChangeCaption.ForeColor = UiTheme.StatusOk;
         lblChange.Text = $"${difference:N2}";
         lblChange.ForeColor = UiTheme.StatusOk;
         lblChangeBreakdown.Text = difference > 0
             ? string.Join("   ", ChangeCalculator.FormatLines(difference))
-            : "Sin cambio";
+            : "Pago exacto (Sin cambio)";
     }
 
     private void SetChangeError(string caption, string amount)
     {
+        _changeBanner.BackColor = Color.FromArgb(254, 242, 242);
         lblChangeCaption.Text = caption;
-        lblChangeCaption.ForeColor = Color.FromArgb(180, 40, 40);
+        lblChangeCaption.ForeColor = UiTheme.StatusDanger;
         lblChange.Text = amount;
-        lblChange.ForeColor = Color.FromArgb(180, 40, 40);
+        lblChange.ForeColor = UiTheme.StatusDanger;
     }
 
     private void CheckoutForm_KeyDown(object? sender, KeyEventArgs e)
@@ -860,6 +1197,36 @@ public partial class CheckoutForm : Form
         DialogResult = DialogResult.OK;
         Close();
     }
+
+    private void OnDragMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+            return;
+        ReleaseCapture();
+        SendMessage(Handle, 0x00A1, 0x0002, 0);
+    }
+
+    private void ApplyRoundedCorners()
+    {
+        try
+        {
+            int preference = 2; // DWMWCP_ROUND
+            DwmSetWindowAttribute(Handle, 33, ref preference, sizeof(int));
+        }
+        catch
+        {
+            // Ignore on older Windows versions
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint hWnd, int msg, nint wParam, nint lParam);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(nint hwnd, int attr, ref int attrValue, int attrSize);
 
     private static bool TryParseMoney(string text, out decimal value)
     {

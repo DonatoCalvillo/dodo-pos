@@ -1,3 +1,4 @@
+using System.Drawing.Drawing2D;
 using FerreSys.Application;
 using FerreSys.Domain;
 using FerreSys.Infrastructure.Persistence;
@@ -14,6 +15,7 @@ public partial class Form1 : Form
     private TabControl tabsCarts = null!;
     private Label lblTotal = null!;
     private Label lblCartSummary = null!;
+    private Label _lblSearchCount = null!;
     private ToolStripStatusLabel lblStatus = null!;
     private Button btnCheckout = null!;
     private Button btnPlus = null!;
@@ -35,6 +37,10 @@ public partial class Form1 : Form
     private ToolStripButton btnBusiness = null!;
     private ToolStripButton btnPeripherals = null!;
     private ToolStripButton btnUsers = null!;
+    private ToolStripDropDownButton _ddCash = null!;
+    private ToolStripDropDownButton _ddCatalog = null!;
+    private ToolStripDropDownButton _ddReports = null!;
+    private ToolStripDropDownButton _ddSystem = null!;
     private ToolStripMenuItem mnuSales = null!;
     private ToolStripMenuItem mnuProfit = null!;
     private ToolStripMenuItem mnuReports = null!;
@@ -139,18 +145,15 @@ public partial class Form1 : Form
         _backupTimer.Tick += (_, _) => RunScheduledBackup();
         _printSaleTicketUseCase = new PrintSaleTicketUseCase();
 
-        // --- CONFIGURACIÓN DE TERMINAL PROFESIONAL (FULL SCREEN) ---
         var version = typeof(Program).Assembly.GetName().Version;
         var versionLabel = version is null ? "" : $" v{version.ToString(3)}";
         this.Text = $"Posly - Punto de Venta{versionLabel}";
         this.StartPosition = FormStartPosition.CenterScreen;
-
-        // Eliminamos los bordes de la ventana (maximizar, minimizar, cerrar tradicionales)
         this.FormBorderStyle = FormBorderStyle.None;
-        // Forzamos a que se maximice ocupando absolutamente todo el monitor
         this.WindowState = FormWindowState.Maximized;
+        this.DoubleBuffered = true;
+        this.BackColor = UiTheme.WindowBg;
 
-        // Mantenemos activo el KeyPreview para que escuche el teclado de forma global
         this.Icon = Branding.AppIcon;
         this.KeyPreview = true;
         this.KeyDown += Form1_KeyDown;
@@ -163,31 +166,31 @@ public partial class Form1 : Form
 
     private void InicializarComponentes()
     {
-        var menu = CreateMenuStrip();
-        var toolBar = CreateToolbar();
+        var headerBar = CreateToolbar();
+        var statusBar = CreateStatusBar();
 
+        // Main container: Row 0 = Compact Search Ribbon (58px), Row 1 = Responsive 2-Column Workspace (100%)
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
-            Padding = new Padding(8, 6, 8, 4),
+            RowCount = 2,
+            Padding = new Padding(12, 10, 12, 8),
             BackColor = UiTheme.WindowBg
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 120));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58f));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-        root.Controls.Add(CreateTopSection(), 0, 0);
-        root.Controls.Add(CreateMiddleSection(), 0, 1);
-        root.Controls.Add(CreateBottomSection(), 0, 2);
+        root.Controls.Add(CreateTopSearchRibbon(), 0, 0);
+        root.Controls.Add(CreateMainWorkspace(), 0, 1);
 
-        var statusBar = CreateStatusBar();
-
-        this.Controls.Add(root);
-        this.Controls.Add(toolBar);
-        this.Controls.Add(menu);
+        this.Controls.Add(headerBar);
         this.Controls.Add(statusBar);
+        this.Controls.Add(root);
+        headerBar.SendToBack();
+        statusBar.SendToBack();
+        root.BringToFront();
 
         SetupSearchContextMenu();
         CalculateTotal();
@@ -197,137 +200,44 @@ public partial class Form1 : Form
         txtBuscador.Focus();
     }
 
-    private MenuStrip CreateMenuStrip()
-    {
-        var menu = new MenuStrip
-        {
-            Font = UiTheme.Ui,
-            BackColor = UiTheme.PanelBg
-        };
-
-        var mArchivo = new ToolStripMenuItem("&Archivo");
-        mnuSales = new ToolStripMenuItem("Ver &Ventas...", null, (_, _) => OpenSales());
-        mnuProfit = new ToolStripMenuItem("&Utilidad bruta / ganancia neta...", null, (_, _) => OpenGrossProfitReport());
-        mnuReports = new ToolStripMenuItem("&Reportes", null, (_, _) => OpenReports());
-        mnuSuggestion = new ToolStripMenuItem("&Sugerido de compra...", null, (_, _) => OpenPurchaseSuggestion());
-        mnuCashX = new ToolStripMenuItem("Corte &X (estado de caja)...", null, (_, _) => OpenCashClose(CashCutMode.X));
-        mnuCashZ = new ToolStripMenuItem("Corte &Z (cierre)...", null, (_, _) => OpenCashClose(CashCutMode.Z));
-        mnuCashMovements = new ToolStripMenuItem("&Movimientos de caja...", null, (_, _) => OpenCashMovements());
-        mnuImport = new ToolStripMenuItem("&Importar productos (CSV)...", null, BtnImportExcel_Click);
-        mnuBusiness = new ToolStripMenuItem("&Datos del negocio...", null, (_, _) => OpenBusinessProfile());
-        mnuPeripherals = new ToolStripMenuItem("&Periféricos e impresión...", null, (_, _) => OpenPeripherals());
-        mnuUsers = new ToolStripMenuItem("&Usuarios...", null, (_, _) => OpenUsers());
-        var mLogout = new ToolStripMenuItem("Cerrar &sesión", null, (_, _) => Logout());
-        var mSalir = new ToolStripMenuItem("&Salir", null, (_, _) => Close());
-        mArchivo.DropDownItems.AddRange([
-            mnuSales, mnuProfit, mnuSuggestion, mnuCashX, mnuCashZ, mnuCashMovements, mnuImport,
-            mnuBusiness, mnuPeripherals, mnuUsers, new ToolStripSeparator(), mLogout, mSalir]);
-
-        mnuProducts = new ToolStripMenuItem("&Productos");
-        mnuRegisterProduct = new ToolStripMenuItem("&Registrar producto...", null, BtnOpenAddProduct_Click);
-        mnuSuggestionProducts = new ToolStripMenuItem("Sugerido de &compra...", null, (_, _) => OpenPurchaseSuggestion());
-        mnuInventory = new ToolStripMenuItem("&Inventario (F8)...", null, (_, _) => OpenInventory());
-        mnuKardex = new ToolStripMenuItem("&Historial de movimientos (Kárdex)...", null, (_, _) => OpenKardex());
-        mnuHideInventory = new ToolStripMenuItem("&Ocultar todo el inventario...", null, (_, _) => HideAllInventory());
-        mnuProducts.DropDownItems.Add(mnuRegisterProduct);
-        mnuProducts.DropDownItems.Add(mnuSuggestionProducts);
-        mnuProducts.DropDownItems.Add(mnuInventory);
-        mnuProducts.DropDownItems.Add(mnuKardex);
-        mnuProducts.DropDownItems.Add(new ToolStripSeparator());
-        mnuProducts.DropDownItems.Add(mnuHideInventory);
-
-        mnuSale = new ToolStripMenuItem("&Venta");
-        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Cobrar (F5)", null, BtnCheckout_Click));
-        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Vaciar carrito", null, BtnClearCart_Click));
-        mnuSale.DropDownItems.Add(new ToolStripSeparator());
-        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Siguiente carrito (F6)", null, (_, _) => CycleToNextCart()));
-        mnuSale.DropDownItems.Add(new ToolStripMenuItem("&Nueva venta (F7)", null, (_, _) => CreateNewCartSession()));
-        mnuSale.DropDownItems.Add(new ToolStripMenuItem("Cerrar venta actual", null, (_, _) => CloseActiveCartSession()));
-
-        menu.Items.AddRange([mArchivo, mnuProducts, mnuSale, mnuReports]);
-        return menu;
-    }
-
     private ToolStrip CreateToolbar()
     {
         var strip = new ToolStrip
         {
             GripStyle = ToolStripGripStyle.Hidden,
-            ImageScalingSize = new Size(24, 24),
+            ImageScalingSize = new Size(20, 20),
             Font = UiTheme.Toolbar,
-            BackColor = UiTheme.PanelBg,
-            Padding = new Padding(4, 2, 4, 2),
-            Height = 56,
-            RenderMode = ToolStripRenderMode.System
+            BackColor = UiTheme.HeaderBg,
+            ForeColor = Color.White,
+            Padding = new Padding(10, 6, 10, 6),
+            AutoSize = false,
+            Height = 52,
+            Renderer = new ModernHeaderStripRenderer()
         };
 
-        btnViewSales = CreateToolItem("Ver Ventas", UiIcons.Sales());
-        btnViewSales.Click += (_, _) => OpenSales();
-
-        btnGrossProfit = CreateToolItem("Utilidad", UiIcons.GrossProfit());
-        btnGrossProfit.Click += (_, _) => OpenGrossProfitReport();
-
-        btnReports = CreateToolItem("Reportes", UiIcons.Sales());
-        btnReports.Click += (_, _) => OpenReports();
-
-        btnPurchaseSuggestion = CreateToolItem("Sugerido", UiIcons.Reorder());
-        btnPurchaseSuggestion.Click += (_, _) => OpenPurchaseSuggestion();
-
-        btnCashCloseX = CreateToolItem("Corte X", UiIcons.CashClose());
-        btnCashCloseX.Click += (_, _) => OpenCashClose(CashCutMode.X);
-
-        btnCashCloseZ = CreateToolItem("Corte Z", UiIcons.CashClose());
-        btnCashCloseZ.Click += (_, _) => OpenCashClose(CashCutMode.Z);
-
-        btnCashMovements = CreateToolItem("Movimientos", UiIcons.CashMovements());
-        btnCashMovements.Click += (_, _) => OpenCashMovements();
-
-        btnKardex = CreateToolItem("Kárdex", UiIcons.Kardex());
-        btnKardex.Click += (_, _) => OpenKardex();
-
-        btnInventory = CreateToolItem("Inventario", UiIcons.Kardex());
-        btnInventory.Click += (_, _) => OpenInventory();
-
-        btnImportExcel = CreateToolItem("Importar CSV", UiIcons.Import());
-        btnImportExcel.Click += BtnImportExcel_Click;
-
-        btnOpenAddProduct = CreateToolItem("Registrar", UiIcons.AddProduct());
-        btnOpenAddProduct.Click += BtnOpenAddProduct_Click;
-
-        btnHideInventory = CreateToolItem("Ocultar inventario", UiIcons.Clear());
-        btnHideInventory.Click += (_, _) => HideAllInventory();
-
-        btnBusiness = CreateToolItem("Negocio", UiIcons.Business());
-        btnBusiness.Click += (_, _) => OpenBusinessProfile();
-
-        btnPeripherals = CreateToolItem("Periféricos", UiIcons.Printer());
-        btnPeripherals.Click += (_, _) => OpenPeripherals();
-
-        btnUsers = CreateToolItem("Usuarios", UiIcons.Sales());
-        btnUsers.Click += (_, _) => OpenUsers();
-
+        // --- LEFT: BRAND & BUSINESS IDENTITY ---
         lblBrand = new ToolStripLabel
         {
-            Image = Branding.ToolbarLogo,
+            Image = ScaleBrandLogo(Branding.Logo, 34),
             DisplayStyle = ToolStripItemDisplayStyle.Image,
             ImageScaling = ToolStripItemImageScaling.None,
             AutoSize = false,
-            Size = new Size(48, 48),
-            Margin = new Padding(12, 0, 2, 0),
+            Size = new Size(38, 38),
+            Margin = new Padding(2, 0, 4, 0),
             Text = string.Empty
         };
         lblBrandName = new ToolStripLabel("POSLY")
         {
-            Font = new Font("Tahoma", 11f, FontStyle.Bold),
-            ForeColor = UiTheme.GroupTitle,
-            Margin = new Padding(0, 0, 4, 0),
+            Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
+            ForeColor = Color.White,
+            Margin = new Padding(0, 0, 6, 0),
             TextAlign = ContentAlignment.MiddleLeft
         };
         lblBrandDivider = new ToolStripLabel("|")
         {
-            Font = new Font("Tahoma", 11f, FontStyle.Bold),
-            ForeColor = UiTheme.GroupTitle,
-            Margin = new Padding(4, 0, 4, 0),
+            Font = new Font("Segoe UI", 12f, FontStyle.Regular),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Margin = new Padding(6, 0, 6, 0),
             Visible = false
         };
         lblBusinessLogo = new ToolStripLabel
@@ -335,203 +245,291 @@ public partial class Form1 : Form
             DisplayStyle = ToolStripItemDisplayStyle.Image,
             ImageScaling = ToolStripItemImageScaling.None,
             AutoSize = false,
-            Size = new Size(40, 40),
+            Size = new Size(34, 34),
             Margin = new Padding(4, 0, 4, 0),
             Visible = false
         };
         lblBusinessName = new ToolStripLabel
         {
-            Font = new Font("Tahoma", 11f, FontStyle.Bold),
-            ForeColor = UiTheme.GroupTitle,
-            Margin = new Padding(2, 0, 8, 0),
+            Font = new Font("Segoe UI Semibold", 11f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(56, 189, 248),
+            Margin = new Padding(2, 0, 12, 0),
             Visible = false
         };
 
-        strip.Items.AddRange([
-            btnViewSales,
-            btnReports,
-            btnGrossProfit,
-            btnPurchaseSuggestion,
-            btnCashCloseX,
-            btnCashCloseZ,
-            btnCashMovements,
-            btnKardex,
-            btnInventory,
-            btnImportExcel,
-            btnOpenAddProduct,
-            btnHideInventory,
-            btnBusiness,
-            btnPeripherals,
-            btnUsers,
+        // Keep legacy ToolStripButton fields instantiated so existing permission logic never hits null
+        btnViewSales = CreateHiddenToolButton();
+        btnGrossProfit = CreateHiddenToolButton();
+        btnReports = CreateHiddenToolButton();
+        btnPurchaseSuggestion = CreateHiddenToolButton();
+        btnCashCloseX = CreateHiddenToolButton();
+        btnCashCloseZ = CreateHiddenToolButton();
+        btnCashMovements = CreateHiddenToolButton();
+        btnKardex = CreateHiddenToolButton();
+        btnImportExcel = CreateHiddenToolButton();
+        btnOpenAddProduct = CreateHiddenToolButton();
+        btnHideInventory = CreateHiddenToolButton();
+        btnBusiness = CreateHiddenToolButton();
+        btnPeripherals = CreateHiddenToolButton();
+        btnUsers = CreateHiddenToolButton();
+        mnuProducts = new ToolStripMenuItem();
+        mnuSale = new ToolStripMenuItem();
+
+        // --- RIGHT SIDE: CLEAN GROUPED NAVIGATION MODULES (Farmacia Guadalajara / Sánchez Style) ---
+
+        // 1. Direct Quick-Consult Button: Inventario (F8)
+        btnInventory = new ToolStripButton
+        {
+            Text = "  Inventario (F8)",
+            Image = UiIcons.Kardex(20),
+            DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
+            TextImageRelation = TextImageRelation.ImageBeforeText,
+            AutoSize = true,
+            ForeColor = Color.White,
+            Padding = new Padding(10, 4, 10, 4),
+            Margin = new Padding(4, 2, 4, 2),
+            Alignment = ToolStripItemAlignment.Right
+        };
+        btnInventory.Click += (_, _) => OpenInventory();
+        mnuInventory = new ToolStripMenuItem("Consultar inventario (F8)", UiIcons.Kardex(18), (_, _) => OpenInventory());
+
+        // 2. Caja y Ventas Dropdown
+        mnuCashX = new ToolStripMenuItem("Corte X (Arqueo en vivo)...", UiIcons.CashClose(18), (_, _) => OpenCashClose(CashCutMode.X));
+        mnuCashZ = new ToolStripMenuItem("Corte Z (Cierre de turno)...", UiIcons.CashClose(18), (_, _) => OpenCashClose(CashCutMode.Z));
+        mnuCashMovements = new ToolStripMenuItem("Entradas y salidas de caja...", UiIcons.CashMovements(18), (_, _) => OpenCashMovements());
+        mnuSales = new ToolStripMenuItem("Historial de ventas y devoluciones...", UiIcons.Sales(18), (_, _) => OpenSales());
+
+        _ddCash = CreateHeaderDropDown("Caja y Turno", UiIcons.CashClose(20), [
+            mnuCashX,
+            mnuCashZ,
+            mnuCashMovements,
             new ToolStripSeparator(),
+            mnuSales
+        ]);
+
+        // 3. Catálogo Dropdown
+        mnuRegisterProduct = new ToolStripMenuItem("Registrar nuevo producto...", UiIcons.AddProduct(18), BtnOpenAddProduct_Click);
+        mnuSuggestion = new ToolStripMenuItem("Sugerido de compra (Faltantes)...", UiIcons.Reorder(18), (_, _) => OpenPurchaseSuggestion());
+        mnuSuggestionProducts = mnuSuggestion;
+        mnuKardex = new ToolStripMenuItem("Kárdex de movimientos...", UiIcons.Kardex(18), (_, _) => OpenKardex());
+        mnuImport = new ToolStripMenuItem("Importar catálogo (CSV)...", UiIcons.Import(18), BtnImportExcel_Click);
+        mnuHideInventory = new ToolStripMenuItem("Ocultar inventario del mostrador...", UiIcons.Clear(18), (_, _) => HideAllInventory());
+
+        _ddCatalog = CreateHeaderDropDown("Catálogo", UiIcons.AddProduct(20), [
+            mnuRegisterProduct,
+            mnuSuggestion,
+            mnuKardex,
+            mnuImport,
+            new ToolStripSeparator(),
+            mnuHideInventory
+        ]);
+
+        // 4. Reportes Dropdown
+        mnuReports = new ToolStripMenuItem("Reportes operativos...", UiIcons.Sales(18), (_, _) => OpenReports());
+        mnuProfit = new ToolStripMenuItem("Utilidad bruta y ganancia neta...", UiIcons.GrossProfit(18), (_, _) => OpenGrossProfitReport());
+
+        _ddReports = CreateHeaderDropDown("Reportes", UiIcons.GrossProfit(20), [
+            mnuReports,
+            mnuProfit
+        ]);
+
+        // 5. Sistema / Sesión Dropdown (Rightmost)
+        mnuBusiness = new ToolStripMenuItem("Datos del negocio y ticket...", UiIcons.Business(18), (_, _) => OpenBusinessProfile());
+        mnuPeripherals = new ToolStripMenuItem("Periféricos e impresora...", UiIcons.Printer(18), (_, _) => OpenPeripherals());
+        mnuUsers = new ToolStripMenuItem("Usuarios y permisos...", UiIcons.Sales(18), (_, _) => OpenUsers());
+        var mnuLic = new ToolStripMenuItem("Suscripción y licencia...", null, (_, _) => OpenLicense());
+        var mnuLogout = new ToolStripMenuItem($"Cerrar turno ({_currentUser.DisplayName})", null, (_, _) => Logout());
+        var mnuExit = new ToolStripMenuItem("Salir de Posly (Esc)", UiIcons.Clear(18), (_, _) => Close());
+
+        _ddSystem = CreateHeaderDropDown($"Sistema · {_currentUser.DisplayName}", UiIcons.Business(20), [
+            mnuBusiness,
+            mnuPeripherals,
+            mnuUsers,
+            mnuLic,
+            new ToolStripSeparator(),
+            mnuLogout,
+            mnuExit
+        ]);
+
+        // Add Right-aligned items in reverse visual order so Sistema is rightmost
+        strip.Items.AddRange([
             lblBrand,
             lblBrandName,
             lblBrandDivider,
             lblBusinessLogo,
-            lblBusinessName
+            lblBusinessName,
+            _ddSystem,
+            _ddReports,
+            _ddCatalog,
+            _ddCash,
+            btnInventory
         ]);
-        RefreshBrand();
 
+        RefreshBrand();
         return strip;
     }
 
-    private static ToolStripButton CreateToolItem(string text, Image icon)
+    private static ToolStripButton CreateHiddenToolButton() => new() { Visible = false };
+
+    private static ToolStripDropDownButton CreateHeaderDropDown(string text, Image icon, ToolStripItem[] items)
     {
-        return new ToolStripButton
+        var dd = new ToolStripDropDownButton
         {
-            Text = text,
+            Text = " " + text,
             Image = icon,
             DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
-            TextImageRelation = TextImageRelation.ImageAboveText,
+            TextImageRelation = TextImageRelation.ImageBeforeText,
             AutoSize = true,
-            Padding = new Padding(8, 2, 8, 2)
+            ForeColor = Color.FromArgb(241, 245, 249),
+            Padding = new Padding(8, 4, 8, 4),
+            Margin = new Padding(3, 2, 3, 2),
+            Alignment = ToolStripItemAlignment.Right
         };
+        dd.DropDownItems.AddRange(items);
+        return dd;
     }
 
-    private TableLayoutPanel CreateTopSection()
+    private Panel CreateTopSearchRibbon()
     {
-        var row = new TableLayoutPanel
+        var bar = new Panel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
-            Margin = new Padding(0, 0, 0, 6),
-            BackColor = UiTheme.WindowBg
+            Margin = new Padding(0, 0, 0, 8),
+            Padding = new Padding(12, 7, 12, 7),
+            BackColor = UiTheme.PanelBg
         };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+        bar.Paint += PaintCardBorder;
 
-        var gbSearch = UiHelp.CreateGroupBox("Búsqueda de producto", SectionHelpText.Search, new Padding(0, 0, 6, 0));
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 420f));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        // Search input box with border & icon
+        var searchBoxContainer = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 10, 0),
+            BackColor = Color.FromArgb(248, 250, 252),
+            Cursor = Cursors.IBeam
+        };
 
         txtBuscador = new TextBox
         {
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Search,
+            BorderStyle = BorderStyle.None,
+            Font = new Font("Segoe UI", 11.5f, FontStyle.Regular),
             ForeColor = UiTheme.Text,
-            PlaceholderText = "Busque o escanee producto..."
+            BackColor = Color.FromArgb(248, 250, 252),
+            PlaceholderText = "Escanee código de barras o busque producto por descripción..."
         };
         txtBuscador.TextChanged += TxtBuscador_TextChanged;
         txtBuscador.KeyDown += TxtBuscador_KeyDown;
+        txtBuscador.GotFocus += (_, _) =>
+        {
+            txtBuscador.BackColor = Color.White;
+            searchBoxContainer.BackColor = Color.White;
+            searchBoxContainer.Invalidate();
+        };
+        txtBuscador.LostFocus += (_, _) =>
+        {
+            var bg = Color.FromArgb(248, 250, 252);
+            txtBuscador.BackColor = bg;
+            searchBoxContainer.BackColor = bg;
+            searchBoxContainer.Invalidate();
+        };
+        searchBoxContainer.Click += (_, _) => txtBuscador.Focus();
 
-        var searchPad = CreateContentPanel();
-        searchPad.Controls.Add(txtBuscador);
-        gbSearch.Controls.Add(searchPad);
+        void UpdateSearchBoxGeometry()
+        {
+            int th = txtBuscador.PreferredHeight;
+            int w = Math.Max(60, searchBoxContainer.ClientSize.Width - 46);
+            int top = Math.Max(2, (searchBoxContainer.ClientSize.Height - th) / 2);
+            txtBuscador.SetBounds(36, top, w, th);
+        }
+        searchBoxContainer.Resize += (_, _) => UpdateSearchBoxGeometry();
+        searchBoxContainer.HandleCreated += (_, _) => UpdateSearchBoxGeometry();
 
-        var gbHints = UiHelp.CreateGroupBox("Indicaciones", margin: new Padding(6, 0, 0, 0));
+        searchBoxContainer.Paint += (s, e) =>
+        {
+            if (s is not Control c) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            bool focused = txtBuscador.Focused;
+            using var pen = new Pen(focused ? UiTheme.BrandPrimary : UiTheme.Border, focused ? 1.8f : 1f);
+            e.Graphics.DrawRectangle(pen, 0, 0, c.Width - 1, c.Height - 1);
 
-        var lblHints = new Label
+            // Search / Barcode icon on the left
+            using var iconPen = new Pen(focused ? UiTheme.BrandPrimary : UiTheme.TextMuted, 1.8f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round
+            };
+            int cy = c.Height / 2;
+            e.Graphics.DrawEllipse(iconPen, 11, cy - 7, 12, 12);
+            e.Graphics.DrawLine(iconPen, 21, cy + 3, 26, cy + 8);
+        };
+        searchBoxContainer.Controls.Add(txtBuscador);
+
+        // Compact Shortcut Pills (Replaces the bulky "Indicaciones" groupbox)
+        var shortcutsFlow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
             AutoSize = false,
-            BackColor = UiTheme.PanelBg,
-            ForeColor = UiTheme.Text,
-            Font = UiTheme.Ui,
-            TextAlign = ContentAlignment.TopLeft,
-            Text = "• Doble clic: añadir al carrito\r\n" +
-                   "• Clic derecho: editar / auditar stock\r\n" +
-                   "• Enter: 1 resultado; suma al carrito si el escáner lo tiene activo\r\n" +
-                   "• F5: cobrar venta",
-            Padding = new Padding(6, 4, 4, 4)
-        };
-
-        var hintsPad = new Panel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(4, 8, 4, 4),
+            Padding = new Padding(0, 4, 4, 0),
+            Margin = new Padding(0),
             BackColor = UiTheme.PanelBg
         };
-        hintsPad.Controls.Add(lblHints);
-        gbHints.Controls.Add(hintsPad);
+        shortcutsFlow.Controls.Add(CreateShortcutBadge("F8", "Inventario"));
+        shortcutsFlow.Controls.Add(CreateShortcutBadge("F7", "Nueva espera"));
+        shortcutsFlow.Controls.Add(CreateShortcutBadge("F5", "Cobrar"));
+        shortcutsFlow.Controls.Add(CreateShortcutBadge("Enter / 2x Clic", "Agregar"));
 
-        row.Controls.Add(gbSearch, 0, 0);
-        row.Controls.Add(gbHints, 1, 0);
-        return row;
-    }
-
-    private TableLayoutPanel CreateMiddleSection()
-    {
-        var row = new TableLayoutPanel
+        var helpHolder = new Panel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
-            Margin = new Padding(0, 0, 0, 6),
-            BackColor = UiTheme.WindowBg
-        };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
-
-        var gbResults = UiHelp.CreateGroupBox("Resultados del catálogo", SectionHelpText.CatalogResults, new Padding(0, 0, 6, 0));
-
-        dgvSearch = CreateGrid();
-        ProductImages.AddPhotoColumn(dgvSearch);
-        dgvSearch.Columns.Add("Barcode", "Código");
-        dgvSearch.Columns.Add("Name", "Descripción");
-        dgvSearch.Columns.Add("Price", "Precio");
-        dgvSearch.Columns.Add("Stock", "Stock");
-        dgvSearch.DoubleClick += DgvSearch_DoubleClick;
-
-        var resultsPad = CreateContentPanel();
-        resultsPad.Controls.Add(dgvSearch);
-        gbResults.Controls.Add(resultsPad);
-
-        var gbSummary = UiHelp.CreateGroupBox("Resumen de venta", SectionHelpText.SaleSummary, new Padding(6, 0, 0, 0));
-
-        var summaryStack = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            Padding = new Padding(8, 14, 8, 8),
+            Margin = new Padding(0),
             BackColor = UiTheme.PanelBg
         };
-        summaryStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        summaryStack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        summaryStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        UiHelp.Attach(helpHolder, "Búsqueda de producto", SectionHelpText.Search);
 
-        lblCartSummary = new Label
-        {
-            Text = "Artículos: 0\nLíneas: 0",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Ui,
-            ForeColor = UiTheme.Text,
-            BackColor = UiTheme.PanelBg,
-            Margin = new Padding(0)
-        };
+        layout.Controls.Add(searchBoxContainer, 0, 0);
+        layout.Controls.Add(shortcutsFlow, 1, 0);
+        layout.Controls.Add(helpHolder, 2, 0);
 
-        lblTotal = new Label
-        {
-            Text = "TOTAL\n$0.00",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.TotalFont,
-            ForeColor = UiTheme.Total,
-            BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Margin = new Padding(0)
-        };
-
-        summaryStack.Controls.Add(lblCartSummary, 0, 0);
-        summaryStack.Controls.Add(lblTotal, 0, 1);
-        summaryStack.Controls.Add(new Label
-        {
-            Text = "Atajo: F5",
-            Dock = DockStyle.Fill,
-            Font = UiTheme.Ui,
-            ForeColor = Color.DimGray,
-            BackColor = UiTheme.PanelBg,
-            TextAlign = ContentAlignment.BottomCenter
-        }, 0, 2);
-
-        gbSummary.Controls.Add(summaryStack);
-
-        row.Controls.Add(gbResults, 0, 0);
-        row.Controls.Add(gbSummary, 1, 0);
-        return row;
+        bar.Controls.Add(layout);
+        return bar;
     }
 
-    private TableLayoutPanel CreateBottomSection()
+    private static Control CreateShortcutBadge(string key, string label)
     {
-        var row = new TableLayoutPanel
+        var pill = new Label
+        {
+            AutoSize = true,
+            Text = $"{key}: {label}",
+            Font = new Font("Segoe UI Semibold", 8.25f, FontStyle.Bold),
+            ForeColor = UiTheme.TextMuted,
+            BackColor = Color.FromArgb(241, 245, 249),
+            Padding = new Padding(6, 4, 6, 4),
+            Margin = new Padding(4, 2, 0, 2)
+        };
+        return pill;
+    }
+
+    private TableLayoutPanel CreateMainWorkspace()
+    {
+        // 2-Column Responsive Split:
+        // Left (74%): Catalog Results (42%) + Active Shopping Cart (58%)
+        // Right (26%): Unified Digital Total Display + Compact Cart Controls + Giant Checkout CTA
+        var workspace = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
@@ -539,12 +537,70 @@ public partial class Form1 : Form
             Margin = new Padding(0),
             BackColor = UiTheme.WindowBg
         };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 74f));
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26f));
+        workspace.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-        var gbCart = UiHelp.CreateGroupBox("Carrito de compra actual", SectionHelpText.Cart, new Padding(0, 0, 6, 0));
+        var leftSplit = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0, 0, 6, 0),
+            BackColor = UiTheme.WindowBg
+        };
+        leftSplit.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        leftSplit.RowStyles.Add(new RowStyle(SizeType.Percent, 42f));
+        leftSplit.RowStyles.Add(new RowStyle(SizeType.Percent, 58f));
 
-        var cartLayout = new TableLayoutPanel
+        leftSplit.Controls.Add(CreateCatalogCard(), 0, 0);
+        leftSplit.Controls.Add(CreateCartCard(), 0, 1);
+
+        workspace.Controls.Add(leftSplit, 0, 0);
+        workspace.Controls.Add(CreateRightCashierTower(), 1, 0);
+
+        return workspace;
+    }
+
+    private Panel CreateCatalogCard()
+    {
+        dgvSearch = CreateGrid();
+        ProductImages.AddPhotoColumn(dgvSearch);
+        dgvSearch.Columns.Add("Barcode", "Código");
+        dgvSearch.Columns.Add("Name", "Descripción del producto");
+        dgvSearch.Columns.Add("Price", "Precio");
+        dgvSearch.Columns.Add("Stock", "Existencia");
+
+        dgvSearch.Columns["Barcode"]!.FillWeight = 22;
+        dgvSearch.Columns["Name"]!.FillWeight = 46;
+        dgvSearch.Columns["Price"]!.FillWeight = 16;
+        dgvSearch.Columns["Price"]!.DefaultCellStyle.Format = "C2";
+        dgvSearch.Columns["Price"]!.DefaultCellStyle.Font = UiTheme.UiBold;
+        dgvSearch.Columns["Stock"]!.FillWeight = 16;
+        dgvSearch.DoubleClick += DgvSearch_DoubleClick;
+
+        _lblSearchCount = new Label
+        {
+            Text = "Catálogo listo",
+            AutoSize = true,
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
+            ForeColor = UiTheme.TextMuted,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 2, 8, 0)
+        };
+
+        return CreateModernCard(
+            title: "RESULTADOS DEL CATÁLOGO",
+            helpTitle: "Resultados del catálogo",
+            helpText: SectionHelpText.CatalogResults,
+            body: dgvSearch,
+            margin: new Padding(0, 0, 0, 8),
+            headerExtra: _lblSearchCount);
+    }
+
+    private Panel CreateCartCard()
+    {
+        var cartContainer = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
@@ -552,13 +608,14 @@ public partial class Form1 : Form
             Margin = new Padding(0),
             BackColor = UiTheme.PanelBg
         };
-        cartLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        cartLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        cartContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        cartContainer.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+        cartContainer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         tabsCarts = new TabControl
         {
             Dock = DockStyle.Fill,
-            Font = UiTheme.Ui,
+            Font = UiTheme.UiBold,
             Appearance = TabAppearance.Normal,
             SizeMode = TabSizeMode.Normal,
             Padding = new Point(12, 4)
@@ -573,94 +630,319 @@ public partial class Form1 : Form
         dgvCart = CreateGrid();
         ProductImages.AddPhotoColumn(dgvCart);
         dgvCart.Columns.Add("Barcode", "Código");
-        dgvCart.Columns.Add("Name", "Producto");
-        dgvCart.Columns.Add("Price", "Precio");
+        dgvCart.Columns.Add("Name", "Producto en ticket");
+        dgvCart.Columns.Add("Price", "P. Unit.");
         dgvCart.Columns.Add("Qty", "Cant.");
-        dgvCart.Columns.Add("Subtotal", "Subtotal");
+        dgvCart.Columns.Add("Subtotal", "Importe");
 
-        var cartPad = CreateContentPanel();
-        cartPad.Controls.Add(dgvCart);
+        dgvCart.Columns["Barcode"]!.FillWeight = 20;
+        dgvCart.Columns["Name"]!.FillWeight = 42;
+        dgvCart.Columns["Price"]!.FillWeight = 14;
+        dgvCart.Columns["Price"]!.DefaultCellStyle.Format = "C2";
+        dgvCart.Columns["Qty"]!.FillWeight = 10;
+        dgvCart.Columns["Qty"]!.DefaultCellStyle.Font = UiTheme.UiBold;
+        dgvCart.Columns["Subtotal"]!.FillWeight = 14;
+        dgvCart.Columns["Subtotal"]!.DefaultCellStyle.Format = "C2";
+        dgvCart.Columns["Subtotal"]!.DefaultCellStyle.Font = UiTheme.UiBold;
 
-        cartLayout.Controls.Add(tabsCarts, 0, 0);
-        cartLayout.Controls.Add(cartPad, 0, 1);
-        gbCart.Controls.Add(cartLayout);
+        cartContainer.Controls.Add(tabsCarts, 0, 0);
+        cartContainer.Controls.Add(dgvCart, 0, 1);
 
         EnsureInitialCartSession();
 
-        var gbActions = UiHelp.CreateGroupBox("Acciones", SectionHelpText.Actions, new Padding(6, 0, 0, 0));
+        return CreateModernCard(
+            title: "TICKET DE VENTA ACTIVO",
+            helpTitle: "Carrito de compra actual",
+            helpText: SectionHelpText.Cart,
+            body: cartContainer,
+            margin: new Padding(0));
+    }
 
-        // Secciones: línea del carrito | ventas en espera | cobrar (CTA)
-        var actionsStack = new TableLayoutPanel
+    private Panel CreateRightCashierTower()
+    {
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(6, 0, 0, 0),
+            Padding = new Padding(12),
+            BackColor = UiTheme.PanelBg
+        };
+        card.Paint += PaintCardBorder;
+
+        // Single responsive column that works on 768p and 1080p without clipping
+        var tower = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 11,
-            Padding = new Padding(4, 8, 4, 4),
+            RowCount = 8,
+            Margin = new Padding(0),
             BackColor = UiTheme.PanelBg
         };
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 22)); // header línea
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 10)); // separador
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 22)); // header espera
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 1));  // regla antes de CTA
-        actionsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        tower.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        tower.RowStyles.Add(new RowStyle(SizeType.Absolute, 146f)); // 0: Digital Total Visor
+        tower.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));  // 1: Section Label "CONTROL DE RENGLÓN"
+        tower.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f));  // 2: [+1] and [-1] side-by-side
+        tower.RowStyles.Add(new RowStyle(SizeType.Absolute, 40f));  // 3: [Vaciar ticket]
+        tower.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));  // 4: Section Label "VENTAS EN ESPERA"
+        tower.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f));  // 5: [Nueva F7] and [Cerrar] side-by-side
+        tower.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // 6: Elastic spacer (absorbs resolution differences)
+        tower.RowStyles.Add(new RowStyle(SizeType.Absolute, 58f));  // 7: Primary CTA [COBRAR VENTA (F5)]
 
-        btnPlus = CreateActionButton("Añadir 1", UiIcons.Plus());
+        // 0. Digital Total Visor (Farmacia Guadalajara / POS Display style)
+        var visor = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 8),
+            Padding = new Padding(14, 10, 14, 10),
+            BackColor = UiTheme.HeaderBg
+        };
+
+        var visorLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        visorLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        visorLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        visorLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18f));
+        visorLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        lblCartSummary = new Label
+        {
+            Text = "VENTA 1  ·  Artículos: 0  ·  Líneas: 0",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 8.75f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(148, 163, 184),
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0)
+        };
+
+        var lblTotalCaption = new Label
+        {
+            Text = "TOTAL A PAGAR",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI Semibold", 8f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(56, 189, 248),
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleRight,
+            Margin = new Padding(0)
+        };
+
+        lblTotal = new Label
+        {
+            Text = "$0.00",
+            Dock = DockStyle.Fill,
+            Font = UiTheme.TotalFont,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleRight,
+            AutoEllipsis = true,
+            Margin = new Padding(0)
+        };
+
+        visorLayout.Controls.Add(lblCartSummary, 0, 0);
+        visorLayout.Controls.Add(lblTotalCaption, 0, 1);
+        visorLayout.Controls.Add(lblTotal, 0, 2);
+        visor.Controls.Add(visorLayout);
+
+        // 2. [+1] / [-1] Side-by-Side Grid
+        var qtyPair = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0, 0, 0, 4),
+            BackColor = UiTheme.PanelBg
+        };
+        qtyPair.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        qtyPair.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        qtyPair.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        btnPlus = CreateActionButton("+1 Cantidad", UiIcons.Plus());
+        btnPlus.Margin = new Padding(0, 0, 4, 0);
         btnPlus.Click += BtnPlus_Click;
 
-        btnMinus = CreateActionButton("Quitar 1", UiIcons.Minus());
+        btnMinus = CreateActionButton("-1 Cantidad", UiIcons.Minus());
+        btnMinus.Margin = new Padding(4, 0, 0, 0);
         btnMinus.Click += BtnMinus_Click;
 
-        btnClearCart = CreateActionButton("Vaciar carrito", UiIcons.Clear());
+        qtyPair.Controls.Add(btnPlus, 0, 0);
+        qtyPair.Controls.Add(btnMinus, 1, 0);
+
+        // 3. Vaciar Ticket
+        btnClearCart = CreateActionButton("Vaciar ticket actual", UiIcons.Clear());
+        btnClearCart.Margin = new Padding(0, 2, 0, 4);
+        btnClearCart.ForeColor = UiTheme.StatusDanger;
         btnClearCart.Click += BtnClearCart_Click;
 
-        btnNewCart = CreateActionButton("Nueva venta (F7)", UiIcons.NewSale());
+        // 5. Hold Sales Side-by-Side Grid
+        var holdPair = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
+        };
+        holdPair.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
+        holdPair.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
+        holdPair.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        btnNewCart = CreateActionButton("Nueva (F7)", UiIcons.NewSale());
+        btnNewCart.Margin = new Padding(0, 0, 4, 0);
         btnNewCart.Click += (_, _) => CreateNewCartSession();
 
-        btnCloseCart = CreateActionButton("Cerrar venta", UiIcons.CloseSale());
+        btnCloseCart = CreateActionButton("Cerrar", UiIcons.CloseSale());
+        btnCloseCart.Margin = new Padding(4, 0, 0, 0);
         btnCloseCart.Click += (_, _) => CloseActiveCartSession();
 
-        btnCheckout = CreateActionButton("Cobrar venta (F5)", UiIcons.Checkout());
-        btnCheckout.Font = UiTheme.UiBold;
+        holdPair.Controls.Add(btnNewCart, 0, 0);
+        holdPair.Controls.Add(btnCloseCart, 1, 0);
+
+        // 7. Primary Checkout CTA Button
+        btnCheckout = new Button
+        {
+            Text = "  COBRAR VENTA (F5)",
+            Image = UiIcons.Checkout(22),
+            ImageAlign = ContentAlignment.MiddleLeft,
+            TextAlign = ContentAlignment.MiddleCenter,
+            TextImageRelation = TextImageRelation.ImageBeforeText,
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = UiTheme.CheckoutGreen,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            Margin = new Padding(0, 4, 0, 0),
+            Padding = new Padding(12, 0, 12, 0),
+            UseVisualStyleBackColor = false
+        };
+        btnCheckout.FlatAppearance.BorderSize = 0;
+        btnCheckout.FlatAppearance.MouseOverBackColor = UiTheme.CheckoutGreenHover;
         btnCheckout.Click += BtnCheckout_Click;
 
-        actionsStack.Controls.Add(CreateActionSectionLabel("Línea del carrito"), 0, 0);
-        actionsStack.Controls.Add(btnPlus, 0, 1);
-        actionsStack.Controls.Add(btnMinus, 0, 2);
-        actionsStack.Controls.Add(btnClearCart, 0, 3);
-        actionsStack.Controls.Add(CreateActionDivider(), 0, 4);
-        actionsStack.Controls.Add(CreateActionSectionLabel("Ventas en espera"), 0, 5);
-        actionsStack.Controls.Add(btnNewCart, 0, 6);
-        actionsStack.Controls.Add(btnCloseCart, 0, 7);
-        actionsStack.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.PanelBg }, 0, 8);
-        actionsStack.Controls.Add(CreateActionDivider(), 0, 9);
-        actionsStack.Controls.Add(btnCheckout, 0, 10);
+        tower.Controls.Add(visor, 0, 0);
+        tower.Controls.Add(CreateActionSectionLabel("Ajuste de renglón"), 0, 1);
+        tower.Controls.Add(qtyPair, 0, 2);
+        tower.Controls.Add(btnClearCart, 0, 3);
+        tower.Controls.Add(CreateActionSectionLabel("Tickets en espera"), 0, 4);
+        tower.Controls.Add(holdPair, 0, 5);
+        tower.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.PanelBg }, 0, 6);
+        tower.Controls.Add(btnCheckout, 0, 7);
 
-        gbActions.Controls.Add(actionsStack);
+        card.Controls.Add(tower);
+        return card;
+    }
 
-        row.Controls.Add(gbCart, 0, 0);
-        row.Controls.Add(gbActions, 1, 0);
-        return row;
+    private static Panel CreateModernCard(
+        string title,
+        string helpTitle,
+        string helpText,
+        Control body,
+        Padding margin,
+        Control? headerExtra = null)
+    {
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = margin,
+            Padding = new Padding(1, 1, 1, 1),
+            BackColor = UiTheme.PanelBg
+        };
+        card.Paint += PaintCardBorder;
+
+        var cardGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
+        };
+        cardGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        cardGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f));
+        cardGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        var header = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            Padding = new Padding(14, 0, 36, 0),
+            BackColor = Color.FromArgb(248, 250, 252)
+        };
+        header.Paint += (s, e) =>
+        {
+            if (s is not Control c) return;
+            using var accentBrush = new SolidBrush(UiTheme.BrandPrimary);
+            e.Graphics.FillRectangle(accentBrush, 0, 8, 4, c.Height - 16);
+            using var linePen = new Pen(UiTheme.Border, 1f);
+            e.Graphics.DrawLine(linePen, 0, c.Height - 1, c.Width, c.Height - 1);
+        };
+
+        var lblTitle = new Label
+        {
+            Text = title,
+            Dock = DockStyle.Left,
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+            ForeColor = UiTheme.GroupTitle,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(0, 8, 0, 0)
+        };
+        header.Controls.Add(lblTitle);
+
+        if (headerExtra != null)
+        {
+            headerExtra.Dock = DockStyle.Right;
+            headerExtra.Padding = new Padding(0, 8, 8, 0);
+            header.Controls.Add(headerExtra);
+        }
+
+        UiHelp.Attach(header, helpTitle, helpText);
+
+        var bodyWrap = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            Padding = new Padding(8, 6, 8, 8),
+            BackColor = UiTheme.PanelBg
+        };
+        body.Dock = DockStyle.Fill;
+        bodyWrap.Controls.Add(body);
+
+        cardGrid.Controls.Add(header, 0, 0);
+        cardGrid.Controls.Add(bodyWrap, 0, 1);
+        card.Controls.Add(cardGrid);
+        return card;
+    }
+
+    private static void PaintCardBorder(object? sender, PaintEventArgs e)
+    {
+        if (sender is not Control c)
+            return;
+        using var pen = new Pen(UiTheme.Border, 1f);
+        e.Graphics.DrawRectangle(pen, 0, 0, c.Width - 1, c.Height - 1);
     }
 
     private StatusStrip CreateStatusBar()
     {
         var status = new StatusStrip
         {
-            BackColor = SystemColors.Control,
+            BackColor = Color.White,
             Font = UiTheme.Ui,
-            SizingGrip = true
+            SizingGrip = false,
+            Padding = new Padding(8, 2, 8, 2)
         };
 
         lblStatus = new ToolStripStatusLabel("Listo")
         {
             Spring = true,
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = UiTheme.Text
         };
 
         lblStockAlerts = new ToolStripStatusLabel("")
@@ -673,10 +955,11 @@ public partial class Form1 : Form
         };
         lblStockAlerts.Click += (_, _) => OpenPurchaseSuggestion();
 
-        var connected = new ToolStripStatusLabel(" Conectado")
+        var connected = new ToolStripStatusLabel(" Terminal activa")
         {
             Image = UiIcons.StatusDot(UiTheme.StatusOk),
             TextImageRelation = TextImageRelation.ImageBeforeText,
+            ForeColor = UiTheme.TextMuted,
             BorderSides = ToolStripStatusLabelBorderSides.Left,
             BorderStyle = Border3DStyle.Etched
         };
@@ -691,8 +974,9 @@ public partial class Form1 : Form
         };
         lblLicense.Click += (_, _) => OpenLicense();
 
-        lblSignedIn = new ToolStripStatusLabel(_currentUser.DisplayName)
+        lblSignedIn = new ToolStripStatusLabel($"Cajero: {_currentUser.DisplayName}")
         {
+            ForeColor = UiTheme.TextMuted,
             BorderSides = ToolStripStatusLabelBorderSides.Left,
             BorderStyle = Border3DStyle.Etched
         };
@@ -702,27 +986,16 @@ public partial class Form1 : Form
         status.Items.Add(lblLicense);
         status.Items.Add(lblStockAlerts);
         status.Items.Add(connected);
-        status.Items.Add(new ToolStripStatusLabel("Mostrador") { BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched });
         status.Items.Add(new ToolStripStatusLabel("Powered by Do&&Do")
         {
             Image = Branding.Mark,
+            ForeColor = UiTheme.TextMuted,
             TextImageRelation = TextImageRelation.ImageBeforeText,
             BorderSides = ToolStripStatusLabelBorderSides.Left,
             BorderStyle = Border3DStyle.Etched
         });
 
         return status;
-    }
-
-    private static Panel CreateContentPanel()
-    {
-        return new Panel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(4, 12, 4, 4),
-            BackColor = UiTheme.PanelBg,
-            ForeColor = UiTheme.Text
-        };
     }
 
     private static DataGridView CreateGrid()
@@ -732,30 +1005,48 @@ public partial class Form1 : Form
             Dock = DockStyle.Fill,
             AllowUserToAddRows = false,
             AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
             ReadOnly = true,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             MultiSelect = false,
             RowHeadersVisible = false,
             BackgroundColor = Color.White,
-            BorderStyle = BorderStyle.Fixed3D,
+            BorderStyle = BorderStyle.None,
+            CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+            ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single,
+            ColumnHeadersHeight = 34,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            RowTemplate = { Height = 36 },
             Font = UiTheme.Ui,
             ForeColor = UiTheme.Text,
             EnableHeadersVisualStyles = false,
             ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
             {
-                BackColor = Color.FromArgb(225, 225, 225),
-                ForeColor = UiTheme.Text,
+                BackColor = Color.FromArgb(241, 245, 249),
+                ForeColor = Color.FromArgb(71, 85, 105),
                 Font = UiTheme.UiBold,
-                SelectionBackColor = Color.FromArgb(225, 225, 225),
-                SelectionForeColor = UiTheme.Text
+                Padding = new Padding(6, 0, 6, 0),
+                SelectionBackColor = Color.FromArgb(241, 245, 249),
+                SelectionForeColor = Color.FromArgb(71, 85, 105)
             },
             DefaultCellStyle = new DataGridViewCellStyle
             {
-                SelectionBackColor = Color.FromArgb(51, 153, 255),
-                SelectionForeColor = Color.White
+                BackColor = Color.White,
+                ForeColor = UiTheme.Text,
+                Padding = new Padding(6, 0, 6, 0),
+                SelectionBackColor = Color.FromArgb(224, 242, 254),
+                SelectionForeColor = Color.FromArgb(15, 23, 42)
             },
-            GridColor = Color.FromArgb(200, 200, 200)
+            AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle
+            {
+                BackColor = Color.FromArgb(248, 250, 252),
+                ForeColor = UiTheme.Text,
+                Padding = new Padding(6, 0, 6, 0),
+                SelectionBackColor = Color.FromArgb(224, 242, 254),
+                SelectionForeColor = Color.FromArgb(15, 23, 42)
+            },
+            GridColor = Color.FromArgb(226, 232, 240)
         };
         return grid;
     }
@@ -766,48 +1057,104 @@ public partial class Form1 : Form
         {
             Text = text.ToUpperInvariant(),
             Dock = DockStyle.Fill,
-            Font = UiTheme.UiBold,
-            ForeColor = UiTheme.GroupTitle,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(2, 0, 2, 0),
-            Padding = new Padding(2, 0, 0, 0)
+            Font = new Font("Segoe UI Semibold", 8f, FontStyle.Bold),
+            ForeColor = UiTheme.TextMuted,
+            TextAlign = ContentAlignment.BottomLeft,
+            Margin = new Padding(0),
+            Padding = new Padding(2, 0, 0, 2)
         };
-    }
-
-    private static Panel CreateActionDivider()
-    {
-        var wrap = new Panel
-        {
-            Dock = DockStyle.Fill,
-            Margin = new Padding(2, 2, 2, 2),
-            BackColor = UiTheme.PanelBg
-        };
-        wrap.Controls.Add(new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 1,
-            BackColor = Color.FromArgb(190, 190, 190)
-        });
-        return wrap;
     }
 
     private static Button CreateActionButton(string text, Image icon)
     {
-        return new Button
+        var btn = new Button
         {
-            Text = "  " + text,
+            Text = " " + text,
             Image = icon,
             ImageAlign = ContentAlignment.MiddleLeft,
-            TextAlign = ContentAlignment.MiddleLeft,
+            TextAlign = ContentAlignment.MiddleCenter,
             TextImageRelation = TextImageRelation.ImageBeforeText,
             Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Standard,
-            UseVisualStyleBackColor = true,
-            Font = UiTheme.Ui,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(248, 250, 252),
             ForeColor = UiTheme.Text,
-            Margin = new Padding(0, 0, 0, 6),
-            Padding = new Padding(8, 0, 8, 0)
+            Font = UiTheme.UiBold,
+            Cursor = Cursors.Hand,
+            Margin = new Padding(0, 0, 0, 4),
+            Padding = new Padding(8, 0, 8, 0),
+            UseVisualStyleBackColor = false
         };
+        btn.FlatAppearance.BorderColor = UiTheme.Border;
+        btn.FlatAppearance.BorderSize = 1;
+        btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(226, 232, 240);
+        return btn;
+    }
+
+    private sealed class ModernHeaderStripRenderer : ToolStripProfessionalRenderer
+    {
+        public ModernHeaderStripRenderer() : base(new HeaderColorTable())
+        {
+            RoundedEdges = false;
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            // No 3D border on the main top bar
+        }
+
+        protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e)
+        {
+            RenderHeaderPill(e.Graphics, e.Item);
+        }
+
+        protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs e)
+        {
+            RenderHeaderPill(e.Graphics, e.Item);
+        }
+
+        protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+        {
+            if (e.Item?.Owner is ToolStrip && e.Item.Owner is not ToolStripDropDownMenu)
+            {
+                e.ArrowColor = Color.FromArgb(148, 163, 184);
+            }
+            base.OnRenderArrow(e);
+        }
+
+        private static void RenderHeaderPill(Graphics g, ToolStripItem item)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(1, 2, item.Width - 3, item.Height - 5);
+            Color fill = item.Pressed
+                ? Color.FromArgb(0, 149, 217)
+                : item.Selected
+                    ? Color.FromArgb(30, 41, 59)
+                    : Color.FromArgb(22, 32, 50);
+            Color border = item.Selected || item.Pressed
+                ? Color.FromArgb(56, 189, 248)
+                : Color.FromArgb(51, 65, 85);
+
+            using var path = LoginForm.RoundedRect(rect, 6);
+            using var brush = new SolidBrush(fill);
+            using var pen = new Pen(border, 1f);
+            g.FillPath(brush, path);
+            g.DrawPath(pen, path);
+        }
+
+        private sealed class HeaderColorTable : ProfessionalColorTable
+        {
+            public override Color ToolStripDropDownBackground => Color.White;
+            public override Color ImageMarginGradientBegin => Color.White;
+            public override Color ImageMarginGradientMiddle => Color.White;
+            public override Color ImageMarginGradientEnd => Color.White;
+            public override Color MenuBorder => UiTheme.Border;
+            public override Color MenuItemBorder => Color.FromArgb(186, 230, 253);
+            public override Color MenuItemSelected => Color.FromArgb(240, 249, 255);
+            public override Color MenuItemSelectedGradientBegin => Color.FromArgb(240, 249, 255);
+            public override Color MenuItemSelectedGradientEnd => Color.FromArgb(240, 249, 255);
+            public override Color SeparatorDark => UiTheme.Border;
+            public override Color SeparatorLight => Color.White;
+        }
     }
 
     private void OpenSales()
@@ -1136,6 +1483,10 @@ public partial class Form1 : Form
         mnuAuditProduct.Enabled = products;
         mnuKardexProduct.Enabled = products;
         mnuHideProduct.Enabled = products;
+
+        _ddCash.Visible = cash || sales;
+        _ddCatalog.Visible = products || reports || import;
+        _ddReports.Visible = reports;
     }
 
     private void OpenUsers()
@@ -1219,10 +1570,12 @@ public partial class Form1 : Form
                 row.Tag = p;
                 ApplyStockAlertRowStyle(row, p);
             }
+            _lblSearchCount.Text = $"{matches.Count} coincidencia(s)";
             SetStatus($"Búsqueda: {matches.Count} resultado(s) para \"{term}\"");
         }
         else
         {
+            _lblSearchCount.Text = "Catálogo listo";
             SetStatus("Listo");
         }
     }
@@ -1580,9 +1933,9 @@ public partial class Form1 : Form
             _saleTotal += Convert.ToDecimal(row.Cells["Subtotal"].Value);
             itemCount += Convert.ToDecimal(row.Cells["Qty"].Value);
         }
-        lblTotal.Text = $"TOTAL\n${_saleTotal:N2}";
-        string label = _cartSessions.Count > 0 ? ActiveSession.Label : "Venta";
-        lblCartSummary.Text = $"{label}\nCantidad: {itemCount:0.###}\nLíneas: {dgvCart.Rows.Count}";
+        lblTotal.Text = $"${_saleTotal:N2}";
+        string label = _cartSessions.Count > 0 ? ActiveSession.Label.ToUpperInvariant() : "VENTA";
+        lblCartSummary.Text = $"{label}   ·   Artículos: {itemCount:0.###}   ·   Líneas: {dgvCart.Rows.Count}";
     }
 
     private void BtnCheckout_Click(object? sender, EventArgs e)
