@@ -69,6 +69,15 @@ public static class TicketFormatter
                 buffer.AppendLine(FormatLine("REF:", sale.CardReference, width));
         }
 
+        if (sale.Loyalty is { } loyalty)
+        {
+            buffer.AppendLine(FormatLine("CLIENTE:", loyalty.CustomerName, width));
+            if (!string.IsNullOrWhiteSpace(loyalty.RewardName))
+                buffer.AppendLine(FormatLine("PREMIO:", loyalty.RewardName, width));
+            buffer.AppendLine(FormatLine("PUNTOS:", $"+{loyalty.PointsEarned}", width));
+            buffer.AppendLine(FormatLine("SALDO:", loyalty.BalanceAfter.ToString(), width));
+        }
+
         buffer.AppendLine(new string('=', width));
         AppendLayout(pieces, buffer, profile.FooterLayout, profile, width);
         Flush(pieces, buffer);

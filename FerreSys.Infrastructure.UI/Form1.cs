@@ -52,6 +52,7 @@ public partial class Form1 : Form
     private ToolStripMenuItem mnuBusiness = null!;
     private ToolStripMenuItem mnuPeripherals = null!;
     private ToolStripMenuItem mnuUsers = null!;
+    private ToolStripMenuItem mnuLoyalty = null!;
     private ToolStripMenuItem mnuProducts = null!;
     private ToolStripMenuItem mnuRegisterProduct = null!;
     private ToolStripMenuItem mnuSuggestionProducts = null!;
@@ -102,6 +103,7 @@ public partial class Form1 : Form
     private readonly DeactivateProductUseCase _deactivateProductUseCase;
     private readonly string[] _startupArgs;
     private readonly SqliteAppSettingsStore _appSettings;
+    private readonly SqliteLoyaltyRepository _loyalty;
     private readonly CloudBackupService _cloudBackup;
     private readonly LocalBackupService _localBackup;
     private readonly System.Windows.Forms.Timer _backupTimer;
@@ -120,10 +122,12 @@ public partial class Form1 : Form
         _currentUser = currentUser;
         _dbContext = new SqliteDbContext();
         _productRepository = new SqliteProductRepository(_dbContext);
+        _appSettings = new SqliteAppSettingsStore(_dbContext);
+        _loyalty = new SqliteLoyaltyRepository(_dbContext);
         _subscriptionService = subscription;
         _addProductUseCase = new AddProductUseCase(_productRepository, _subscriptionService);
         _searchProductsUseCase = new SearchProductsUseCase(_productRepository);
-        _processSaleUseCase = new ProcessSaleUseCase(_productRepository);
+        _processSaleUseCase = new ProcessSaleUseCase(_productRepository, _loyalty, _appSettings);
         _getDailyCashSummaryUseCase = new GetDailyCashSummaryUseCase(_productRepository);
         _getGrossProfitSummaryUseCase = new GetGrossProfitSummaryUseCase(_productRepository);
         _reportsUseCase = new ReportsUseCase(new SqliteReportReader(_dbContext));
@@ -138,7 +142,6 @@ public partial class Form1 : Form
         _importProductsUseCase = new ImportProductsUseCase(_productRepository, _subscriptionService);
         _adjustStockUseCase = new AdjustStockUseCase(_productRepository);
         _deactivateProductUseCase = new DeactivateProductUseCase(_productRepository);
-        _appSettings = new SqliteAppSettingsStore(_dbContext);
         _cloudBackup = new CloudBackupService(_dbContext, new UnconfiguredCloudBackupStore());
         _localBackup = new LocalBackupService(_dbContext, _appSettings);
         _backupTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
@@ -337,6 +340,7 @@ public partial class Form1 : Form
         mnuBusiness = new ToolStripMenuItem("Datos del negocio y ticket...", UiIcons.Business(18), (_, _) => OpenBusinessProfile());
         mnuPeripherals = new ToolStripMenuItem("Periféricos e impresora...", UiIcons.Printer(18), (_, _) => OpenPeripherals());
         mnuUsers = new ToolStripMenuItem("Usuarios y permisos...", UiIcons.Sales(18), (_, _) => OpenUsers());
+        mnuLoyalty = new ToolStripMenuItem("Fidelidad...", UiIcons.Sales(18), (_, _) => OpenLoyalty());
         var mnuLic = new ToolStripMenuItem("Suscripción y licencia...", null, (_, _) => OpenLicense());
         var mnuLogout = new ToolStripMenuItem($"Cerrar turno ({_currentUser.DisplayName})", null, (_, _) => Logout());
         var mnuExit = new ToolStripMenuItem("Salir de Posly (Esc)", UiIcons.Clear(18), (_, _) => Close());
@@ -345,6 +349,7 @@ public partial class Form1 : Form
             mnuBusiness,
             mnuPeripherals,
             mnuUsers,
+            mnuLoyalty,
             mnuLic,
             new ToolStripSeparator(),
             mnuLogout,
@@ -1165,7 +1170,7 @@ public partial class Form1 : Form
         using var f = new SalesHistoryForm(
             _productRepository,
             _appSettings,
-            new ProcessSaleReturnUseCase(_productRepository));
+            new ProcessSaleReturnUseCase(_productRepository, _loyalty));
         f.ShowDialog();
     }
 
@@ -1462,6 +1467,7 @@ public partial class Form1 : Form
         mnuPeripherals.Visible = settings;
         btnPeripherals.Visible = settings;
         mnuUsers.Visible = users;
+        mnuLoyalty.Visible = settings;
         btnUsers.Visible = users;
         mnuRegisterProduct.Visible = products;
         btnOpenAddProduct.Visible = products;
@@ -1487,6 +1493,15 @@ public partial class Form1 : Form
         _ddCash.Visible = cash || sales;
         _ddCatalog.Visible = products || reports || import;
         _ddReports.Visible = reports;
+    }
+
+    private void OpenLoyalty()
+    {
+        if (!Allow(UserPermission.Settings))
+            return;
+
+        using var form = new LoyaltyForm(_loyalty, _appSettings);
+        form.ShowDialog(this);
     }
 
     private void OpenUsers()
@@ -1954,7 +1969,7 @@ public partial class Form1 : Form
             RefreshActiveCartPrices();
 
             // ABRIR VENTANA DE COBRO INTERMEDIA: Pasamos el total actual calculando del carrito
-            using var checkoutForm = new CheckoutForm(_saleTotal);
+            using var checkoutForm = new CheckoutForm(_saleTotal, _loyalty, _appSettings.GetLoyaltySettings());
             if (checkoutForm.ShowDialog() != DialogResult.OK)
             {
                 return; // Si el ferretero cancela o cierra la ventana, detenemos el cobro
@@ -1982,7 +1997,8 @@ public partial class Form1 : Form
                 reference,
                 amountReceived,
                 cardAmount,
-                checkoutForm.DiscountAmount);
+                checkoutForm.DiscountAmount,
+                checkoutForm.LoyaltyRequest);
             PrintSaleTicket(sale);
 
             if (method == "EFECTIVO" || method == "MIXTO")

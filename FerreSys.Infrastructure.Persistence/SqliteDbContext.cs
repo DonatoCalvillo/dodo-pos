@@ -199,6 +199,46 @@ public class SqliteDbContext
             Value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS Customers (
+            Id TEXT PRIMARY KEY,
+            Name TEXT NOT NULL,
+            Phone TEXT NOT NULL,
+            Email TEXT NOT NULL DEFAULT '',
+            Notes TEXT NOT NULL DEFAULT '',
+            IsActive INTEGER NOT NULL DEFAULT 1,
+            CreatedAt TEXT NOT NULL,
+            Rfc TEXT NOT NULL DEFAULT '',
+            LegalName TEXT NOT NULL DEFAULT '',
+            TaxRegime TEXT NOT NULL DEFAULT '',
+            TaxZipCode TEXT NOT NULL DEFAULT '',
+            CfdiUse TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS IX_Customers_Phone ON Customers(Phone);
+
+        CREATE TABLE IF NOT EXISTS LoyaltyRewards (
+            Id TEXT PRIMARY KEY,
+            Name TEXT NOT NULL,
+            Description TEXT NOT NULL DEFAULT '',
+            PointsCost INTEGER NOT NULL,
+            Kind TEXT NOT NULL,
+            Value REAL NOT NULL DEFAULT 0,
+            IsActive INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS LoyaltyMovements (
+            Id TEXT PRIMARY KEY,
+            CustomerId TEXT NOT NULL,
+            SaleId TEXT,
+            OccurredAt TEXT NOT NULL,
+            Kind TEXT NOT NULL,
+            Points INTEGER NOT NULL,
+            RewardId TEXT,
+            Note TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY(CustomerId) REFERENCES Customers(Id)
+        );
+        CREATE INDEX IF NOT EXISTS IX_LoyaltyMovements_Customer ON LoyaltyMovements(CustomerId);
+        CREATE INDEX IF NOT EXISTS IX_LoyaltyMovements_Sale ON LoyaltyMovements(SaleId);
+
         CREATE TABLE IF NOT EXISTS Users (
             Id TEXT PRIMARY KEY,
             EmployeeNumber TEXT NOT NULL UNIQUE,
@@ -230,6 +270,8 @@ public class SqliteDbContext
         EnsureProductImageColumn(connection);
         EnsureProductPricingColumns(connection);
         EnsureSaleDiscountColumn(connection);
+        EnsureSaleLoyaltyColumns(connection);
+        EnsureCustomerFiscalColumns(connection);
         EnsureSaleDetailUnitColumn(connection);
         EnsureCashCloseReportColumns(connection);
     }
@@ -463,6 +505,63 @@ public class SqliteDbContext
             "ALTER TABLE Sales ADD COLUMN DiscountAmount REAL NOT NULL DEFAULT 0;",
             connection);
         alter.ExecuteNonQuery();
+    }
+
+    private static void EnsureSaleLoyaltyColumns(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(Sales);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        void AddColumnIfMissing(string name, string definition)
+        {
+            if (columns.Contains(name))
+                return;
+
+            using var alter = new SqliteCommand(
+                $"ALTER TABLE Sales ADD COLUMN {name} {definition};",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+
+        AddColumnIfMissing("CustomerId", "TEXT");
+        AddColumnIfMissing("CustomerName", "TEXT NOT NULL DEFAULT ''");
+        AddColumnIfMissing("LoyaltyPointsEarned", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing("LoyaltyRewardId", "TEXT");
+        AddColumnIfMissing("LoyaltyRewardName", "TEXT NOT NULL DEFAULT ''");
+        AddColumnIfMissing("LoyaltyPointsRedeemed", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing("LoyaltyDiscountAmount", "REAL NOT NULL DEFAULT 0");
+        AddColumnIfMissing("LoyaltyBalanceAfter", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private static void EnsureCustomerFiscalColumns(SqliteConnection connection)
+    {
+        using var pragma = new SqliteCommand("PRAGMA table_info(Customers);", connection);
+        using var reader = pragma.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        reader.Close();
+
+        void AddColumnIfMissing(string name)
+        {
+            if (columns.Contains(name))
+                return;
+
+            using var alter = new SqliteCommand(
+                $"ALTER TABLE Customers ADD COLUMN {name} TEXT NOT NULL DEFAULT '';",
+                connection);
+            alter.ExecuteNonQuery();
+        }
+
+        AddColumnIfMissing("Rfc");
+        AddColumnIfMissing("LegalName");
+        AddColumnIfMissing("TaxRegime");
+        AddColumnIfMissing("TaxZipCode");
+        AddColumnIfMissing("CfdiUse");
     }
 
     private static void EnsureSaleDetailUnitColumn(SqliteConnection connection)

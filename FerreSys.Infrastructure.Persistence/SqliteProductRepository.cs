@@ -10,7 +10,17 @@ public class SqliteProductRepository : IProductRepository
         "SELECT Id, Barcode, Name, CostPrice, RetailPrice, Stock, Unit, MinStock, DesiredStock, IsActive, ImageBlob, DiscountKind, DiscountValue, DiscountStartsOn, DiscountEndsOn, WholesalePrice, WholesaleMinQuantity FROM Products";
 
     private const string SaleHeaderSelect =
-        "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount FROM Sales";
+        "SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount, " +
+        "CustomerId, CustomerName, LoyaltyPointsEarned, LoyaltyRewardId, LoyaltyRewardName, " +
+        "LoyaltyPointsRedeemed, LoyaltyDiscountAmount, LoyaltyBalanceAfter FROM Sales";
+
+    private const string SaleInsert =
+        "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount, " +
+        "CustomerId, CustomerName, LoyaltyPointsEarned, LoyaltyRewardId, LoyaltyRewardName, " +
+        "LoyaltyPointsRedeemed, LoyaltyDiscountAmount, LoyaltyBalanceAfter) " +
+        "VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount, @DiscountAmount, " +
+        "@CustomerId, @CustomerName, @LoyaltyPointsEarned, @LoyaltyRewardId, @LoyaltyRewardName, " +
+        "@LoyaltyPointsRedeemed, @LoyaltyDiscountAmount, @LoyaltyBalanceAfter);";
 
     private readonly SqliteDbContext _context;
 
@@ -160,20 +170,7 @@ public class SqliteProductRepository : IProductRepository
 
         try
         {
-            // Insertar en cabecera de Ventas
-            string saleQuery = "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount) VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount, @DiscountAmount);";
-            using (var cmdSale = new SqliteCommand(saleQuery, connection, transaction))
-            {
-                cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
-                cmdSale.Parameters.AddWithValue("@CreatedAt", sale.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
-                cmdSale.Parameters.AddWithValue("@Total", sale.Total);
-                cmdSale.Parameters.AddWithValue("@PaymentMethod", sale.PaymentMethod);
-                cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
-                cmdSale.Parameters.AddWithValue("@AmountReceived", sale.AmountReceived);
-                cmdSale.Parameters.AddWithValue("@CardAmount", sale.CardAmount);
-                cmdSale.Parameters.AddWithValue("@DiscountAmount", sale.DiscountAmount);
-                cmdSale.ExecuteNonQuery();
-            }
+            InsertSaleHeader(connection, transaction, sale);
             // Insertar los detalles
             string detailQuery = @"
             INSERT INTO SaleDetails (SaleId, ProductId, Barcode, ProductName, Quantity, PriceSold, UnitPrice, CostPrice, Unit)
@@ -230,21 +227,7 @@ public class SqliteProductRepository : IProductRepository
                 cmdUpdate.ExecuteNonQuery();
             }
 
-            string saleQuery =
-                "INSERT INTO Sales (Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount) " +
-                "VALUES (@Id, @CreatedAt, @Total, @PaymentMethod, @CardReference, @AmountReceived, @CardAmount, @DiscountAmount);";
-            using (var cmdSale = new SqliteCommand(saleQuery, connection, transaction))
-            {
-                cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
-                cmdSale.Parameters.AddWithValue("@CreatedAt", sale.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
-                cmdSale.Parameters.AddWithValue("@Total", sale.Total);
-                cmdSale.Parameters.AddWithValue("@PaymentMethod", sale.PaymentMethod);
-                cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
-                cmdSale.Parameters.AddWithValue("@AmountReceived", sale.AmountReceived);
-                cmdSale.Parameters.AddWithValue("@CardAmount", sale.CardAmount);
-                cmdSale.Parameters.AddWithValue("@DiscountAmount", sale.DiscountAmount);
-                cmdSale.ExecuteNonQuery();
-            }
+            InsertSaleHeader(connection, transaction, sale);
 
             string detailQuery = @"
                 INSERT INTO SaleDetails (SaleId, ProductId, Barcode, ProductName, Quantity, PriceSold, UnitPrice, CostPrice, Unit)
@@ -579,9 +562,7 @@ public class SqliteProductRepository : IProductRepository
         connection.Open();
 
         // Filtramos usando la función date() de SQLite para comparar rangos de forma limpia (YYYY-MM-DD)
-        string query = @"
-        SELECT Id, CreatedAt, Total, PaymentMethod, CardReference, AmountReceived, CardAmount, DiscountAmount
-        FROM Sales 
+        string query = SaleHeaderSelect + @"
         WHERE date(CreatedAt) >= date(@StartDate) 
           AND date(CreatedAt) <= date(@EndDate)";
 
@@ -798,7 +779,8 @@ public class SqliteProductRepository : IProductRepository
         SaleReturn saleReturn,
         CashMovement cashMovement,
         IReadOnlyList<Product> products,
-        IReadOnlyList<StockMovement> movements)
+        IReadOnlyList<StockMovement> movements,
+        IReadOnlyList<LoyaltyMovement>? loyaltyReversals = null)
     {
         using var connection = _context.CreateConnection();
         connection.Open();
@@ -869,6 +851,12 @@ public class SqliteProductRepository : IProductRepository
             }
 
             InsertStockMovements(connection, transaction, movements);
+            if (loyaltyReversals != null)
+            {
+                foreach (LoyaltyMovement movement in loyaltyReversals)
+                    SqliteLoyaltyRepository.InsertMovement(connection, transaction, movement);
+            }
+
             transaction.Commit();
         }
         catch
@@ -1034,6 +1022,7 @@ public class SqliteProductRepository : IProductRepository
         decimal amountReceived = reader.IsDBNull(5) ? 0m : reader.GetDecimal(5);
         decimal cardAmount = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetDecimal(6) : 0m;
         decimal discount = reader.FieldCount > 7 && !reader.IsDBNull(7) ? ReadMoney(reader, 7) : 0m;
+        LoyaltySaleInfo? loyalty = ReadLoyalty(reader, discount);
 
         return new Sale(
             Guid.Parse(reader.GetString(0)),
@@ -1043,7 +1032,88 @@ public class SqliteProductRepository : IProductRepository
             cardReference,
             amountReceived,
             cardAmount,
-            discount);
+            discount,
+            loyalty);
+    }
+
+    private static void InsertSaleHeader(SqliteConnection connection, SqliteTransaction transaction, Sale sale)
+    {
+        using var cmdSale = new SqliteCommand(SaleInsert, connection, transaction);
+        cmdSale.Parameters.AddWithValue("@Id", sale.Id.ToString());
+        cmdSale.Parameters.AddWithValue("@CreatedAt", sale.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmdSale.Parameters.AddWithValue("@Total", sale.Total);
+        cmdSale.Parameters.AddWithValue("@PaymentMethod", sale.PaymentMethod);
+        cmdSale.Parameters.AddWithValue("@CardReference", sale.CardReference);
+        cmdSale.Parameters.AddWithValue("@AmountReceived", sale.AmountReceived);
+        cmdSale.Parameters.AddWithValue("@CardAmount", sale.CardAmount);
+        cmdSale.Parameters.AddWithValue("@DiscountAmount", sale.DiscountAmount);
+        LoyaltySaleInfo? loyalty = sale.Loyalty;
+        cmdSale.Parameters.AddWithValue("@CustomerId", loyalty == null ? DBNull.Value : loyalty.CustomerId.ToString());
+        cmdSale.Parameters.AddWithValue("@CustomerName", loyalty?.CustomerName ?? string.Empty);
+        cmdSale.Parameters.AddWithValue("@LoyaltyPointsEarned", loyalty?.PointsEarned ?? 0);
+        cmdSale.Parameters.AddWithValue("@LoyaltyRewardId", loyalty?.RewardId?.ToString() ?? (object)DBNull.Value);
+        cmdSale.Parameters.AddWithValue("@LoyaltyRewardName", loyalty?.RewardName ?? string.Empty);
+        cmdSale.Parameters.AddWithValue("@LoyaltyPointsRedeemed", loyalty?.PointsRedeemed ?? 0);
+        cmdSale.Parameters.AddWithValue("@LoyaltyDiscountAmount", loyalty?.DiscountAmount ?? 0m);
+        cmdSale.Parameters.AddWithValue("@LoyaltyBalanceAfter", loyalty?.BalanceAfter ?? 0);
+        cmdSale.ExecuteNonQuery();
+
+        if (loyalty == null)
+            return;
+
+        if (loyalty.PointsEarned > 0)
+        {
+            SqliteLoyaltyRepository.InsertMovement(connection, transaction, new LoyaltyMovement(
+                Guid.NewGuid(),
+                loyalty.CustomerId,
+                sale.Id,
+                sale.CreatedAt,
+                LoyaltyMovementKind.Earn,
+                loyalty.PointsEarned,
+                null,
+                "Puntos de la venta"));
+        }
+
+        if (loyalty.PointsRedeemed > 0)
+        {
+            SqliteLoyaltyRepository.InsertMovement(connection, transaction, new LoyaltyMovement(
+                Guid.NewGuid(),
+                loyalty.CustomerId,
+                sale.Id,
+                sale.CreatedAt,
+                LoyaltyMovementKind.Redeem,
+                -loyalty.PointsRedeemed,
+                loyalty.RewardId,
+                string.IsNullOrWhiteSpace(loyalty.RewardName) ? "Canje de premio" : loyalty.RewardName));
+        }
+    }
+
+    private static LoyaltySaleInfo? ReadLoyalty(SqliteDataReader reader, decimal discount)
+    {
+        if (reader.FieldCount <= 8 || reader.IsDBNull(8))
+            return null;
+
+        string customerIdText = reader.GetString(8);
+        if (!Guid.TryParse(customerIdText, out Guid customerId) || customerId == Guid.Empty)
+            return null;
+
+        string rewardText = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetString(11) : string.Empty;
+        Guid? rewardId = Guid.TryParse(rewardText, out Guid parsedReward) && parsedReward != Guid.Empty
+            ? parsedReward
+            : null;
+        decimal loyaltyDiscount = reader.FieldCount > 14 && !reader.IsDBNull(14) ? ReadMoney(reader, 14) : 0m;
+        if (loyaltyDiscount > discount)
+            loyaltyDiscount = discount;
+
+        return new LoyaltySaleInfo(
+            customerId,
+            reader.FieldCount > 9 && !reader.IsDBNull(9) ? reader.GetString(9) : string.Empty,
+            reader.FieldCount > 10 && !reader.IsDBNull(10) ? Convert.ToInt32(reader.GetValue(10)) : 0,
+            rewardId,
+            reader.FieldCount > 12 && !reader.IsDBNull(12) ? reader.GetString(12) : string.Empty,
+            reader.FieldCount > 13 && !reader.IsDBNull(13) ? Convert.ToInt32(reader.GetValue(13)) : 0,
+            loyaltyDiscount,
+            reader.FieldCount > 15 && !reader.IsDBNull(15) ? Convert.ToInt32(reader.GetValue(15)) : 0);
     }
 
     private static Product MapProduct(SqliteDataReader reader)

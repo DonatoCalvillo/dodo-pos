@@ -257,7 +257,8 @@ public partial class SalesHistoryForm : Form
             header.CardReference,
             header.AmountReceived,
             header.CardAmount,
-            header.DiscountAmount);
+            header.DiscountAmount,
+            header.Loyalty);
         using var dialog = new ReprintTicketForm(sale, _settings);
         dialog.ShowDialog(this);
     }

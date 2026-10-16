@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using FerreSys.Application;
 using FerreSys.Domain;
+using FerreSys.Infrastructure.Persistence;
 
 namespace FerreSys.Infrastructure.UI;
 
@@ -13,8 +14,11 @@ public partial class CheckoutForm : Form
     public decimal AmountReceived { get; private set; }
     public decimal CardAmount { get; private set; }
     public decimal DiscountAmount { get; private set; }
+    public LoyaltyCheckoutRequest? LoyaltyRequest { get; private set; }
 
     private readonly decimal _subtotal;
+    private readonly ILoyaltyRepository _loyalty;
+    private readonly LoyaltyProgramSettings _loyaltySettings;
     private decimal _totalAmount;
     private bool _syncingDiscount;
     private RadioButton rbCash = null!;
@@ -37,11 +41,27 @@ public partial class CheckoutForm : Form
     private Label lblSubtotal = null!;
     private Label lblTicketDiscount = null!;
     private Label lblPayable = null!;
+    private ComboBox cboLoyaltyCustomer = null!;
+    private Button btnClearLoyalty = null!;
+    private Label lblLoyaltyStatus = null!;
+    private ComboBox cboLoyaltyReward = null!;
+    private Customer? _loyaltyCustomer;
+    private int _loyaltyBalance;
+    private bool _suppressLoyalty;
 
     private static readonly decimal[] Bills = [20m, 50m, 100m, 200m, 500m, 1000m];
 
-    public CheckoutForm(decimal totalAmount)
+    public CheckoutForm(decimal totalAmount, ILoyaltyRepository? loyalty = null, LoyaltyProgramSettings? settings = null)
     {
+        if (loyalty == null || settings == null)
+        {
+            var db = new SqliteDbContext();
+            loyalty ??= new SqliteLoyaltyRepository(db);
+            settings ??= new SqliteAppSettingsStore(db).GetLoyaltySettings();
+        }
+
+        _loyalty = loyalty;
+        _loyaltySettings = settings;
         _subtotal = totalAmount;
         _totalAmount = totalAmount;
         AmountReceived = totalAmount;
@@ -51,7 +71,7 @@ public partial class CheckoutForm : Form
     private void InitializeComponent(decimal totalAmount)
     {
         Text = "Procesar Pago - Posly";
-        ClientSize = new Size(640, 668);
+        ClientSize = new Size(640, 816);
         FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -73,22 +93,24 @@ public partial class CheckoutForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 6,
             Padding = new Padding(16, 10, 16, 12),
             BackColor = UiTheme.WindowBg
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));  // 0: Dark Digital Total Visor
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 86f));  // 1: Ticket Discount Card
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 156f)); // 2: Payment Method Card
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // 3: Cash & Change Card (~220px)
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48f));  // 4: Confirm & Cancel CTA Row
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 148f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 86f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 156f));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48f));
 
         root.Controls.Add(CreateTotalSection(totalAmount), 0, 0);
-        root.Controls.Add(CreateDiscountSection(), 0, 1);
-        root.Controls.Add(CreatePaymentSection(), 0, 2);
-        root.Controls.Add(CreateCashSection(), 0, 3);
-        root.Controls.Add(CreateActionsSection(), 0, 4);
+        root.Controls.Add(CreateLoyaltySection(), 0, 1);
+        root.Controls.Add(CreateDiscountSection(), 0, 2);
+        root.Controls.Add(CreatePaymentSection(), 0, 3);
+        root.Controls.Add(CreateCashSection(), 0, 4);
+        root.Controls.Add(CreateActionsSection(), 0, 5);
 
         Controls.Add(header);
         Controls.Add(root);
@@ -97,6 +119,7 @@ public partial class CheckoutForm : Form
 
         txtReceived.Text = totalAmount.ToString("N2");
         UpdatePaymentState();
+        RefreshLoyaltyStatus();
 
         Shown += (_, _) =>
         {
@@ -244,6 +267,237 @@ public partial class CheckoutForm : Form
 
         visor.Controls.Add(grid);
         return visor;
+    }
+
+    private Panel CreateLoyaltySection()
+    {
+        var body = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 3,
+            Padding = new Padding(12, 6, 12, 6),
+            Margin = new Padding(0),
+            BackColor = UiTheme.PanelBg
+        };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88f));
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
+
+        cboLoyaltyCustomer = new ComboBox
+        {
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 10f, FontStyle.Regular),
+            Margin = new Padding(0, 2, 8, 0),
+            Enabled = _loyaltySettings.Enabled
+        };
+        cboLoyaltyCustomer.TextUpdate += LoyaltyCustomerTextUpdated;
+        cboLoyaltyCustomer.SelectionChangeCommitted += LoyaltyCustomerChosen;
+
+        btnClearLoyalty = new Button
+        {
+            Text = "Quitar",
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 2, 0, 0),
+            Enabled = _loyaltySettings.Enabled
+        };
+        btnClearLoyalty.Click += (_, _) => ClearLoyaltyCustomer();
+
+        lblLoyaltyStatus = new Label
+        {
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = UiTheme.TextMuted,
+            Margin = new Padding(0)
+        };
+
+        cboLoyaltyReward = new ComboBox
+        {
+            Dock = DockStyle.Fill,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 10f, FontStyle.Regular),
+            Margin = new Padding(0, 2, 0, 0),
+            Enabled = false
+        };
+        cboLoyaltyReward.SelectedIndexChanged += (_, _) =>
+        {
+            if (!_suppressLoyalty)
+                ApplyTicketDiscount();
+        };
+
+        body.Controls.Add(cboLoyaltyCustomer, 0, 0);
+        body.Controls.Add(btnClearLoyalty, 1, 0);
+        body.Controls.Add(lblLoyaltyStatus, 0, 1);
+        body.SetColumnSpan(lblLoyaltyStatus, 2);
+        body.Controls.Add(cboLoyaltyReward, 0, 2);
+        body.SetColumnSpan(cboLoyaltyReward, 2);
+        FillLoyaltyRewards();
+
+        return CreateSectionCard("CLIENTE DE FIDELIDAD", "Cliente de fidelidad", SectionHelpText.CheckoutLoyalty, body);
+    }
+
+    private void LoyaltyCustomerTextUpdated(object? sender, EventArgs e)
+    {
+        if (_suppressLoyalty || !_loyaltySettings.Enabled)
+            return;
+
+        if (cboLoyaltyCustomer.SelectedIndex >= 0 && cboLoyaltyCustomer.SelectedItem is CustomerBalance picked)
+        {
+            _loyaltyCustomer = picked.Customer;
+            _loyaltyBalance = picked.Points;
+            FillLoyaltyRewards();
+            RefreshLoyaltyStatus();
+            ApplyTicketDiscount();
+            return;
+        }
+
+        string term = cboLoyaltyCustomer.Text;
+        _loyaltyCustomer = null;
+        _loyaltyBalance = 0;
+        FillLoyaltyRewards();
+
+        int caret = cboLoyaltyCustomer.SelectionStart;
+        _suppressLoyalty = true;
+        cboLoyaltyCustomer.Items.Clear();
+        if (term.Trim().Length >= 2)
+        {
+            foreach (CustomerBalance row in _loyalty.SearchActive(term.Trim()))
+                cboLoyaltyCustomer.Items.Add(row);
+        }
+
+        cboLoyaltyCustomer.Text = term;
+        cboLoyaltyCustomer.SelectionStart = Math.Min(caret, term.Length);
+        _suppressLoyalty = false;
+        RefreshLoyaltyStatus();
+        ApplyTicketDiscount();
+
+        if (cboLoyaltyCustomer.Items.Count > 0 && cboLoyaltyCustomer.Focused)
+        {
+            string keep = term;
+            BeginInvoke(() =>
+            {
+                if (IsDisposed || cboLoyaltyCustomer.Text != keep || cboLoyaltyCustomer.Items.Count == 0)
+                    return;
+
+                cboLoyaltyCustomer.DroppedDown = true;
+                Cursor.Current = Cursors.Default;
+            });
+        }
+    }
+
+    private void LoyaltyCustomerChosen(object? sender, EventArgs e)
+    {
+        if (_suppressLoyalty || cboLoyaltyCustomer.SelectedItem is not CustomerBalance row)
+            return;
+
+        _loyaltyCustomer = row.Customer;
+        _loyaltyBalance = row.Points;
+        FillLoyaltyRewards();
+        RefreshLoyaltyStatus();
+        ApplyTicketDiscount();
+    }
+
+    private void ClearLoyaltyCustomer()
+    {
+        _suppressLoyalty = true;
+        _loyaltyCustomer = null;
+        _loyaltyBalance = 0;
+        cboLoyaltyCustomer.SelectedIndex = -1;
+        cboLoyaltyCustomer.Text = string.Empty;
+        cboLoyaltyCustomer.Items.Clear();
+        _suppressLoyalty = false;
+        FillLoyaltyRewards();
+        RefreshLoyaltyStatus();
+        ApplyTicketDiscount();
+    }
+
+    private void FillLoyaltyRewards()
+    {
+        if (cboLoyaltyReward == null)
+            return;
+
+        Guid? selected = (cboLoyaltyReward.SelectedItem as RewardChoice)?.Reward?.Id;
+        _suppressLoyalty = true;
+        cboLoyaltyReward.Items.Clear();
+        cboLoyaltyReward.Items.Add(new RewardChoice(null, "Sin premio"));
+        int index = 0;
+        if (_loyaltySettings.Enabled && _loyaltyCustomer != null)
+        {
+            foreach (LoyaltyReward reward in _loyalty.ListRewards())
+            {
+                if (!reward.IsActive || reward.PointsCost > _loyaltyBalance)
+                    continue;
+
+                cboLoyaltyReward.Items.Add(new RewardChoice(
+                    reward,
+                    $"{reward.Name} · {reward.PointsCost} pts · {reward.ValueLabel}"));
+                if (reward.Id == selected)
+                    index = cboLoyaltyReward.Items.Count - 1;
+            }
+        }
+
+        cboLoyaltyReward.SelectedIndex = cboLoyaltyReward.Items.Count == 0 ? -1 : index;
+        cboLoyaltyReward.Enabled = _loyaltySettings.Enabled && _loyaltyCustomer != null;
+        _suppressLoyalty = false;
+    }
+
+    private decimal ManualTicketDiscount()
+    {
+        if (cboTicketDiscount == null || numTicketDiscount == null)
+            return 0m;
+
+        return cboTicketDiscount.SelectedIndex switch
+        {
+            1 => decimal.Round(_subtotal * numTicketDiscount.Value / 100m, 2, MidpointRounding.AwayFromZero),
+            2 => decimal.Round(numTicketDiscount.Value, 2, MidpointRounding.AwayFromZero),
+            _ => 0m
+        };
+    }
+
+    private decimal CurrentLoyaltyDiscount()
+    {
+        if (!_loyaltySettings.Enabled || _loyaltyCustomer == null)
+            return 0m;
+
+        return (cboLoyaltyReward.SelectedItem as RewardChoice)?.Reward?.DiscountFor(_subtotal) ?? 0m;
+    }
+
+    private void RefreshLoyaltyStatus()
+    {
+        if (lblLoyaltyStatus == null)
+            return;
+
+        if (!_loyaltySettings.Enabled)
+        {
+            lblLoyaltyStatus.Text = "El programa de fidelidad está apagado.";
+            return;
+        }
+
+        if (_loyaltyCustomer == null)
+        {
+            lblLoyaltyStatus.Text = "Sin cliente. La venta no suma puntos.";
+            return;
+        }
+
+        decimal payable = _totalAmount > 0m && _totalAmount <= _subtotal ? _totalAmount : _subtotal;
+        int points = _loyaltySettings.CalculatePoints(_subtotal, payable);
+        lblLoyaltyStatus.Text = $"Saldo: {_loyaltyBalance} puntos    ·    Esta venta: {points} puntos";
+    }
+
+    private sealed class RewardChoice
+    {
+        public LoyaltyReward? Reward { get; }
+        private readonly string _label;
+
+        public RewardChoice(LoyaltyReward? reward, string label)
+        {
+            Reward = reward;
+            _label = label;
+        }
+
+        public override string ToString() => _label;
     }
 
     private Panel CreateDiscountSection()
@@ -842,12 +1096,9 @@ public partial class CheckoutForm : Form
             numTicketDiscount.Maximum = cap;
 
             decimal previous = _totalAmount;
-            decimal raw = kind switch
-            {
-                DiscountKind.Percent => decimal.Round(_subtotal * numTicketDiscount.Value / 100m, 2, MidpointRounding.AwayFromZero),
-                DiscountKind.FixedAmount => decimal.Round(numTicketDiscount.Value, 2, MidpointRounding.AwayFromZero),
-                _ => 0m
-            };
+            decimal manual = ManualTicketDiscount();
+            decimal loyaltyDiscount = CurrentLoyaltyDiscount();
+            decimal raw = manual + loyaltyDiscount;
 
             if (raw > 0m && raw >= _subtotal)
             {
@@ -858,7 +1109,8 @@ public partial class CheckoutForm : Form
             else
             {
                 _totalAmount = _subtotal - raw;
-                lblTicketDiscount.Text = raw > 0m ? $"Descuento aplicado: -${raw:N2}" : "Sin descuento de ticket";
+                string prize = loyaltyDiscount > 0m ? $" (premio -${loyaltyDiscount:N2})" : "";
+                lblTicketDiscount.Text = raw > 0m ? $"Descuento aplicado: -${raw:N2}{prize}" : "Sin descuento de ticket";
                 lblTicketDiscount.ForeColor = raw > 0m ? Color.FromArgb(74, 222, 128) : Color.FromArgb(148, 163, 184);
             }
 
@@ -875,23 +1127,27 @@ public partial class CheckoutForm : Form
 
         if (rbCash != null)
             RefreshChange();
+
+        RefreshLoyaltyStatus();
     }
 
     private bool TryCommitTicketDiscount()
     {
-        DiscountKind kind = cboTicketDiscount.SelectedIndex switch
+        if (_loyaltySettings.Enabled
+            && _loyaltyCustomer == null
+            && cboLoyaltyCustomer.Text.Trim().Length > 0)
         {
-            1 => DiscountKind.Percent,
-            2 => DiscountKind.FixedAmount,
-            _ => DiscountKind.None
-        };
+            MessageBox.Show(
+                "Selecciona un cliente de la lista o borra la búsqueda.",
+                "Fidelidad",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            cboLoyaltyCustomer.Focus();
+            return false;
+        }
 
-        decimal raw = kind switch
-        {
-            DiscountKind.Percent => decimal.Round(_subtotal * numTicketDiscount.Value / 100m, 2, MidpointRounding.AwayFromZero),
-            DiscountKind.FixedAmount => decimal.Round(numTicketDiscount.Value, 2, MidpointRounding.AwayFromZero),
-            _ => 0m
-        };
+        decimal loyaltyDiscount = CurrentLoyaltyDiscount();
+        decimal raw = ManualTicketDiscount() + loyaltyDiscount;
 
         if (raw > 0m && raw >= _subtotal)
         {
@@ -905,6 +1161,20 @@ public partial class CheckoutForm : Form
 
         DiscountAmount = raw;
         _totalAmount = _subtotal - raw;
+        if (_loyaltySettings.Enabled && _loyaltyCustomer != null)
+        {
+            LoyaltyRequest = new LoyaltyCheckoutRequest
+            {
+                CustomerId = _loyaltyCustomer.Id,
+                RewardId = (cboLoyaltyReward.SelectedItem as RewardChoice)?.Reward?.Id,
+                LoyaltyDiscountAmount = loyaltyDiscount
+            };
+        }
+        else
+        {
+            LoyaltyRequest = null;
+        }
+
         return true;
     }
 

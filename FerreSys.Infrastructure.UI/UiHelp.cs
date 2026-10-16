@@ -200,6 +200,12 @@ internal static class SectionHelpText
         "Si hay descuento de ticket, este monto ya es el neto.\n" +
         "No incluye movimientos de caja ajenos a la venta.";
 
+    public const string CheckoutLoyalty =
+        "Opcional. Busca un cliente ya registrado para sumar puntos de esta venta.\n\n" +
+        "• Si tiene puntos suficientes, puedes canjear un premio.\n" +
+        "• Un descuento del premio se resta en esta venta.\n" +
+        "• Sin cliente, la venta se cobra como siempre.";
+
     public const string CheckoutDiscount =
         "Descuento sobre el total del ticket, aparte del descuento de cada producto.\n\n" +
         "• Porcentaje: baja el subtotal ese tanto por ciento.\n" +

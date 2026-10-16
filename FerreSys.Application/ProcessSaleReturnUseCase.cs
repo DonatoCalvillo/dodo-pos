@@ -25,10 +25,12 @@ public class SaleReturnQuote
 public class ProcessSaleReturnUseCase
 {
     private readonly IProductRepository _productRepository;
+    private readonly ILoyaltyRepository _loyalty;
 
-    public ProcessSaleReturnUseCase(IProductRepository productRepository)
+    public ProcessSaleReturnUseCase(IProductRepository productRepository, ILoyaltyRepository loyalty)
     {
         _productRepository = productRepository;
+        _loyalty = loyalty;
     }
 
     public SaleReturnQuote Quote(Guid saleId, IReadOnlyList<SaleReturnLineRequest> requested)
@@ -82,7 +84,16 @@ public class ProcessSaleReturnUseCase
             $"Devolución ticket {ticket}",
             saleReturn.CreatedAt);
 
-        _productRepository.SaveSaleReturn(saleReturn, cashMovement, products, movements);
+        LoyaltyReversalTotals prior = built.Sale.Loyalty == null
+            ? default
+            : _loyalty.GetReversalTotals(saleId);
+        IReadOnlyList<LoyaltyMovement> reversals = LoyaltyReturnPlanner.Plan(
+            built.Sale,
+            saleReturn.Amount,
+            built.Quote.ReturnsAllRemaining,
+            prior);
+
+        _productRepository.SaveSaleReturn(saleReturn, cashMovement, products, movements, reversals);
         return saleReturn;
     }
 
@@ -167,7 +178,7 @@ public class ProcessSaleReturnUseCase
         }
 
         decimal amount = decimal.Round(lines.Sum(line => line.LineAmount), 2, MidpointRounding.AwayFromZero);
-        return new BuiltReturn(new SaleReturnQuote(amount, returnsAllRemaining, lines));
+        return new BuiltReturn(sale, new SaleReturnQuote(amount, returnsAllRemaining, lines));
     }
 
     private static decimal[] AllocateAmounts(
@@ -264,10 +275,12 @@ public class ProcessSaleReturnUseCase
 
     private sealed class BuiltReturn
     {
+        public Sale Sale { get; }
         public SaleReturnQuote Quote { get; }
 
-        public BuiltReturn(SaleReturnQuote quote)
+        public BuiltReturn(Sale sale, SaleReturnQuote quote)
         {
+            Sale = sale;
             Quote = quote;
         }
     }

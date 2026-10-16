@@ -109,5 +109,6 @@ public interface IProductRepository
         SaleReturn saleReturn,
         CashMovement cashMovement,
         IReadOnlyList<Product> products,
-        IReadOnlyList<StockMovement> movements);
+        IReadOnlyList<StockMovement> movements,
+        IReadOnlyList<LoyaltyMovement>? loyaltyReversals = null);
 }

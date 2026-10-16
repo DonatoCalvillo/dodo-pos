@@ -43,6 +43,7 @@ public class Sale
     public string CardReference { get; private set; } // Últimos 4 dígitos o folio (opcional)
     public decimal AmountReceived { get; private set; }
     public decimal CardAmount { get; private set; }
+    public LoyaltySaleInfo? Loyalty { get; private set; }
     public decimal CashAmount => Total - CardAmount;
     public decimal Change => CashAmount > 0 ? AmountReceived - CashAmount : 0m;
 
@@ -54,7 +55,8 @@ public class Sale
         string cardReference,
         decimal amountReceived = 0,
         decimal cardAmount = 0,
-        decimal discountAmount = 0)
+        decimal discountAmount = 0,
+        LoyaltySaleInfo? loyalty = null)
     {
         if (items == null || items.Count == 0)
             throw new ArgumentException("Una venta debe contener al menos un producto.");
@@ -74,6 +76,11 @@ public class Sale
 
         if (DiscountAmount > 0m && DiscountAmount >= Subtotal)
             throw new ArgumentException("El descuento de la venta debe ser menor al subtotal.");
+
+        if (loyalty != null && loyalty.DiscountAmount > DiscountAmount)
+            throw new ArgumentException("El descuento del premio no puede ser mayor al descuento de la venta.");
+
+        Loyalty = loyalty;
 
         decimal total = Total;
         decimal roundedCard = decimal.Round(cardAmount, 2, MidpointRounding.AwayFromZero);

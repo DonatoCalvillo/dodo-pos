@@ -215,6 +215,34 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
         }
     }
 
+    public LoyaltyProgramSettings GetLoyaltySettings()
+    {
+        var values = ReadAll();
+        return new LoyaltyProgramSettings
+        {
+            Enabled = Get(values, "loyalty.enabled", "0") == "1",
+            EarnMode = ParseEnum(Get(values, "loyalty.earnMode", nameof(LoyaltyEarnMode.PercentOfSale)), LoyaltyEarnMode.PercentOfSale),
+            EarnPercent = ParseDecimal(Get(values, "loyalty.earnPercent", "10"), 10m),
+            PointsPerBlock = ParseInt(Get(values, "loyalty.pointsPerBlock", "1"), 1),
+            AmountPerBlock = ParseDecimal(Get(values, "loyalty.amountPerBlock", "10"), 10m),
+            EarnBase = ParseEnum(Get(values, "loyalty.earnBase", nameof(LoyaltyEarnBase.PaidTotal)), LoyaltyEarnBase.PaidTotal)
+        };
+    }
+
+    public void SaveLoyaltySettings(LoyaltyProgramSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        Write(new Dictionary<string, string>
+        {
+            ["loyalty.enabled"] = settings.Enabled ? "1" : "0",
+            ["loyalty.earnMode"] = settings.EarnMode.ToString(),
+            ["loyalty.earnPercent"] = settings.EarnPercent.ToString(CultureInfo.InvariantCulture),
+            ["loyalty.pointsPerBlock"] = settings.PointsPerBlock.ToString(CultureInfo.InvariantCulture),
+            ["loyalty.amountPerBlock"] = settings.AmountPerBlock.ToString(CultureInfo.InvariantCulture),
+            ["loyalty.earnBase"] = settings.EarnBase.ToString()
+        });
+    }
+
     public void SaveReportPreferences(ReportPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
@@ -263,6 +291,9 @@ public sealed class SqliteAppSettingsStore : IAppSettingsStore
 
     private static int ParseInt(string text, int fallback) =>
         int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : fallback;
+
+    private static decimal ParseDecimal(string text, decimal fallback) =>
+        decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : fallback;
 
     private static TEnum ParseEnum<TEnum>(string text, TEnum fallback) where TEnum : struct =>
         Enum.TryParse<TEnum>(text, ignoreCase: true, out var value) ? value : fallback;

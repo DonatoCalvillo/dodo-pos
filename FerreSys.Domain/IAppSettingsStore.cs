@@ -21,4 +21,7 @@ public interface IAppSettingsStore
 
     ReportPreferences GetReportPreferences();
     void SaveReportPreferences(ReportPreferences preferences);
+
+    LoyaltyProgramSettings GetLoyaltySettings();
+    void SaveLoyaltySettings(LoyaltyProgramSettings settings);
 }
